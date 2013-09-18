@@ -82,7 +82,6 @@
 /libvirt-*.tar.gz
 /libvirt-[0-9]*
 /libvirt.pc
-/libvirt.spec
 /ltconfig
 /ltmain.sh
 /m4/*
