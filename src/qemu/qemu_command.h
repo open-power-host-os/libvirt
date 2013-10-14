@@ -153,6 +153,9 @@ char * qemuBuildPCIHostdevDevStr(virDomainDefPtr def,
                                  virDomainHostdevDefPtr dev,
                                  const char *configfd,
                                  virQEMUCapsPtr qemuCaps);
+char *
+qemuBuildSPAPRVFIODevStr(virDomainHostdevDefPtr dev,
+                         virQEMUCapsPtr qemuCaps);
 
 int qemuOpenPCIConfig(virDomainHostdevDefPtr dev);
 
