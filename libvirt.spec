@@ -1,6 +1,6 @@
 # -*- rpm-spec -*-
 
-ExclusiveArch: ppc64 x86_64 s390x
+ExclusiveArch: ppc64
 
 # If neither fedora nor rhel was defined, try to guess them from %{dist}
 %if !0%{?rhel} && !0%{?fedora}
@@ -97,6 +97,8 @@ ExclusiveArch: ppc64 x86_64 s390x
 %endif
 %define with_numactl          0%{!?_without_numactl:%{server_drivers}}
 %define with_selinux          0%{!?_without_selinux:%{server_drivers}}
+# Just hardcode to off, since few people ever have apparmor RPMs installed
+%define with_apparmor         0%{!?_without_apparmor:0}
 
 # A few optional bits off by default, we enable later
 %define with_polkit        0%{!?_without_polkit:0}
@@ -344,8 +346,8 @@ ExclusiveArch: ppc64 x86_64 s390x
 
 Summary: Library providing a simple virtualization API
 Name: libvirt
-Version: 1.0.5.1
-%define mcp_release .3
+Version: 1.1.2
+%define mcp_release .1
 Release: 1%{?dist}%{?mcp_release}%{?extra_release}
 # MCP: exclude cross arches for this package
 ExcludeArch: %{cross_arches}
@@ -357,11 +359,10 @@ URL: http://libvirt.org/
 %if %(echo %{version} | grep -o \\. | wc -l) == 3
     %define mainturl stable_updates/
 %endif
-Source: http://libvirt.org/sources/%{?mainturl}libvirt-%{version}.tar.gz
 
 Requires(pre): qemu
 
-
+BuildRequires: git
 
 %if %{with_libvirtd}
 Requires: libvirt-daemon = %{version}-%{release}
@@ -400,13 +401,13 @@ Requires: libvirt-client = %{version}-%{release}
 
 # All build-time requirements. Run-time requirements are
 # listed against each sub-RPM
-%if 0%{?enable_autotools}
+#%if 0%{?enable_autotools}
 BuildRequires: autoconf
 BuildRequires: automake
 BuildRequires: gettext-devel
 BuildRequires: libtool
 BuildRequires: /usr/bin/pod2man
-%endif
+#%endif
 %if %{with_python}
 BuildRequires: python-devel
 %endif
@@ -418,7 +419,7 @@ BuildRequires: libcgroup
 BuildRequires: xen-devel
 %endif
 BuildRequires: libxml2-devel
-#BuildRequires: xhtml1-dtds
+BuildRequires: xhtml1-dtds
 BuildRequires: libxslt
 BuildRequires: readline-devel
 BuildRequires: ncurses-devel
@@ -472,6 +473,9 @@ BuildRequires: avahi-devel
 %endif
 %if %{with_selinux}
 BuildRequires: libselinux-devel
+%endif
+%if %{with_apparmor}
+BuildRequires: libapparmor-devel
 %endif
 %if %{with_network}
 BuildRequires: dnsmasq >= 2.41
@@ -1095,8 +1099,14 @@ supplied by the libvirt library to use the virtualization capabilities
 of recent versions of Linux (and other OSes).
 %endif
 
+%debug_package
+
 %prep
-%setup -q
+
+git clone --branch powerkvm3 git://9.3.189.26/frobisher/libvirt.git ./
+git log > ChangeLog
+git submodule init
+git submodule update
 
 %build
 %if ! %{with_xen}
@@ -1287,10 +1297,6 @@ of recent versions of Linux (and other OSes).
     %define init_scripts --with-init_script=redhat
 %endif
 
-%if 0%{?enable_autotools}
- autoreconf -if
-%endif
-
 %if %{with_selinux}
     %if 0%{?fedora} >= 17 || 0%{?rhel} >= 7 || 0%{?mcp} >= 8
         %define with_selinux_mount --with-selinux-mount="/sys/fs/selinux"
@@ -1299,7 +1305,14 @@ of recent versions of Linux (and other OSes).
     %endif
 %endif
 
-%configure %{?_without_xen} \
+# place macros above and build commands below this comment
+
+%if 0%{?enable_autotools}
+ autoreconf -if
+%endif
+
+./autogen.sh --system \
+           %{?_without_xen} \
            %{?_without_qemu} \
            %{?_without_openvz} \
            %{?_without_lxc} \
@@ -1334,6 +1347,7 @@ of recent versions of Linux (and other OSes).
            %{?_without_netcf} \
            %{?_without_selinux} \
            %{?_with_selinux_mount} \
+           %{?_without_apparmor} \
            %{?_without_hal} \
            %{?_without_udev} \
            %{?_without_yajl} \
@@ -1678,7 +1692,8 @@ fi
 %files daemon
 %defattr(-, root, root)
 
-%doc AUTHORS ChangeLog.gz NEWS README COPYING.LIB TODO
+# remove COPYING.LIB
+%doc AUTHORS ChangeLog.gz README TODO COPYING.LESSER
 %dir %attr(0700, root, root) %{_sysconfdir}/libvirt/
 
     %if %{with_network}
@@ -1701,6 +1716,8 @@ fi
 %config(noreplace) %{_sysconfdir}/sysconfig/libvirtd
 %config(noreplace) %{_sysconfdir}/sysconfig/virtlockd
 %config(noreplace) %{_sysconfdir}/libvirt/libvirtd.conf
+%config(noreplace) %{_sysconfdir}/libvirt/virtlockd.conf
+
     %if 0%{?fedora} >= 14 || 0%{?rhel} >= 6 || 0%{?mcp} >= 7
 %config(noreplace) %{_prefix}/lib/sysctl.d/libvirtd.conf
     %endif
@@ -1742,6 +1759,8 @@ fi
     %if %{with_qemu}
 %ghost %dir %attr(0700, root, root) %{_localstatedir}/run/libvirt/qemu/
 %dir %attr(0750, %{qemu_user}, %{qemu_group}) %{_localstatedir}/lib/libvirt/qemu/
+%dir %attr(0750, %{qemu_user}, %{qemu_group}) %{_localstatedir}/lib/libvirt/qemu/channel/
+%dir %attr(0750, %{qemu_user}, %{qemu_group}) %{_localstatedir}/lib/libvirt/qemu/channel/target/
 %dir %attr(0750, %{qemu_user}, %{qemu_group}) %{_localstatedir}/cache/libvirt/qemu/
     %endif
     %if %{with_lxc}
@@ -1780,6 +1799,8 @@ fi
 
 %{_datadir}/augeas/lenses/libvirtd.aug
 %{_datadir}/augeas/lenses/tests/test_libvirtd.aug
+%{_datadir}/augeas/lenses/virtlockd.aug
+%{_datadir}/augeas/lenses/tests/test_virtlockd.aug
 %{_datadir}/augeas/lenses/libvirt_lockd.aug
 %{_datadir}/augeas/lenses/tests/test_libvirt_lockd.aug
 
@@ -1806,6 +1827,7 @@ fi
 %attr(0755, root, root) %{_sbindir}/virtlockd
 
 %{_mandir}/man8/libvirtd.8*
+%{_mandir}/man8/virtlockd.8*
 
     %if %{with_driver_modules}
         %if %{with_network}
@@ -1927,17 +1949,20 @@ fi
 
 %files client -f %{name}.lang
 %defattr(-, root, root)
-%doc AUTHORS ChangeLog.gz NEWS README COPYING.LIB TODO
 
 %config(noreplace) %{_sysconfdir}/libvirt/libvirt.conf
+%config(noreplace) %{_sysconfdir}/libvirt/virt-login-shell.conf
+
 %{_mandir}/man1/virsh.1*
 %{_mandir}/man1/virt-xml-validate.1*
 %{_mandir}/man1/virt-pki-validate.1*
 %{_mandir}/man1/virt-host-validate.1*
+%{_mandir}/man1/virt-login-shell.1*
 %{_bindir}/virsh
 %{_bindir}/virt-xml-validate
 %{_bindir}/virt-pki-validate
 %{_bindir}/virt-host-validate
+%attr(4755, root, root) %{_bindir}/virt-login-shell
 %{_libdir}/lib*.so.*
 
 %if %{with_dtrace}
@@ -2007,17 +2032,23 @@ fi
 %files python
 %defattr(-, root, root)
 
-%doc AUTHORS NEWS README COPYING.LIB
+%doc TODO
 %{_libdir}/python*/site-packages/libvirt.py*
 %{_libdir}/python*/site-packages/libvirt_qemu.py*
 %{_libdir}/python*/site-packages/libvirt_lxc.py*
 %{_libdir}/python*/site-packages/libvirtmod*
-%doc python/tests/*.py
-%doc python/TODO
 %doc examples/python
 %doc examples/domain-events/events-python
 %endif
 
+%if 0%{?mcp}
+%{_datadir}/libvirt/schemas/storagefilefeatures.rng
+%{_datadir}/polkit-1/actions/org.libvirt.api.policy
+%endif
+
+
 %changelog
+* Wed Sep 25 2013 wangsen@linux.vnet.ibm.com 1.1.0-1
+- Build KoP build3 packages.
 * Tue Jul 09 2013 baseuser@ibm.com
 - Base-8.x spec file
