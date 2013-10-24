@@ -589,7 +589,7 @@
     <vendor name='IBM'/>
 
     <!-- IBM-based CPU models -->
-    <model name='POWER7'>
+    <model name='POWER7_v2.0'>
       <vendor name='IBM'/>
       <pvr value='0x003f0200'/>
     </model>
@@ -604,12 +604,27 @@
       <pvr value='0x003f0203'/>
     </model>
 
+    <model name='POWER7'>
+      <vendor name='IBM'/>
+      <pvr value='0x003f0203'/>
+    </model>
+
     <model name='POWER7+_v2.1'>
       <vendor name='IBM'/>
       <pvr value='0x004a0201'/>
     </model>
 
+    <model name='POWER7+'>
+      <vendor name='IBM'/>
+      <pvr value='0x004a0201'/>
+    </model>
+
     <model name='POWER8_v1.0'>
+      <vendor name='IBM'/>
+      <pvr value='0x004b0100'/>
+    </model>
+
+    <model name='POWER8'>
       <vendor name='IBM'/>
       <pvr value='0x004b0100'/>
     </model>
