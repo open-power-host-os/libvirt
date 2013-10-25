@@ -493,7 +493,7 @@ cpuTestRun(const char *name, const struct data *data)
 static const char *model486[]   = { "486" };
 static const char *nomodel[]    = { "nomodel" };
 static const char *models[]     = { "qemu64", "core2duo", "Nehalem" };
-static const char *ppc_models[]     = { "POWER7", "POWER7_v2.1", "POWER8_v1.0"};
+static const char *ppc_models[]     = { "POWER7", "POWER7_v2.1", "POWER8", "POWER8_v1.0"};
 
 static int
 mymain(void)
