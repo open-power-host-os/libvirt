@@ -347,7 +347,7 @@ ExclusiveArch: ppc64
 Summary: Library providing a simple virtualization API
 Name: libvirt
 Version: 1.1.3
-%define mcp_release .1
+%define mcp_release .2
 Release: 1%{?dist}%{?mcp_release}%{?extra_release}
 # MCP: exclude cross arches for this package
 ExcludeArch: %{cross_arches}
@@ -2048,6 +2048,8 @@ fi
 
 
 %changelog
+* Fri Nov 08 2013 Wang Sen<wangsen@linux.vnet.ibm.com> 1.1.3-1
+- KoP build4 update1: Include bug 99509 fix.
 * Thu Oct 24 2013 Wang Sen <wangsen@linux.vnet.ibm.com> 1.1.3-1
 - Build packages for KoP build4
 * Wed Sep 25 2013 wangsen@linux.vnet.ibm.com 1.1.0-1
