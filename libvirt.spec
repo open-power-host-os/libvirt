@@ -347,7 +347,7 @@ ExclusiveArch: ppc64
 Summary: Library providing a simple virtualization API
 Name: libvirt
 Version: 1.1.3
-%define mcp_release .2
+%define mcp_release .3
 Release: 1%{?dist}%{?mcp_release}%{?extra_release}
 # MCP: exclude cross arches for this package
 ExcludeArch: %{cross_arches}
@@ -1104,6 +1104,7 @@ of recent versions of Linux (and other OSes).
 %prep
 
 git clone --branch powerkvm git://9.3.189.26/frobisher/libvirt.git ./
+git log --pretty=oneline | head -n1
 git log > ChangeLog
 git submodule init
 git submodule update
@@ -2048,6 +2049,8 @@ fi
 
 
 %changelog
+* Mon Nov 18 2013 Eli Qiao<qiaoly@cn.ibm.com> 1.1.3-1
+- Fix migration with qemu 1.6(pbuild4 respin2)
 * Fri Nov 08 2013 Wang Sen<wangsen@linux.vnet.ibm.com> 1.1.3-1
 - KoP build4 update1: Include bug 99509 fix.
 * Thu Oct 24 2013 Wang Sen <wangsen@linux.vnet.ibm.com> 1.1.3-1
