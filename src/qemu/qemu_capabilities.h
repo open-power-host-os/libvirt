@@ -198,6 +198,7 @@ enum virQEMUCapsFlags {
     QEMU_CAPS_DEVICE_VIRTIO_MMIO = 157, /* -device virtio-mmio */
     QEMU_CAPS_DEVICE_ICH9_INTEL_HDA = 158, /* -device ich9-intel-hda */
     QEMU_CAPS_SPAPR_VFIO_BRIDGE   = 159, /* -device spapr-pci-vfio-host-bridge */
+    QEMU_CAPS_DEVICE_USB_KBD = 160, /*-device usb-kbd*/
 
     QEMU_CAPS_LAST,                   /* this must always be the last item */
 };

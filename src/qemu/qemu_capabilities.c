@@ -243,6 +243,8 @@ VIR_ENUM_IMPL(virQEMUCaps, QEMU_CAPS_LAST,
               "virtio-mmio",
               "ich9-intel-hda",
               "spapr-pci-vfio-host-bridge",
+
+              "usb-kbd",
     );
 
 struct _virQEMUCaps {
@@ -1395,6 +1397,7 @@ struct virQEMUCapsStringFlags virQEMUCapsObjectTypes[] = {
     { "virtio-mmio", QEMU_CAPS_DEVICE_VIRTIO_MMIO },
     { "ich9-intel-hda", QEMU_CAPS_DEVICE_ICH9_INTEL_HDA },
     { "spapr-pci-vfio-host-bridge", QEMU_CAPS_SPAPR_VFIO_BRIDGE },
+    { "usb-kbd", QEMU_CAPS_DEVICE_USB_KBD },
 };
 
 static struct virQEMUCapsStringFlags virQEMUCapsObjectPropsVirtioBlk[] = {

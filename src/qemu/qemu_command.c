@@ -5264,9 +5264,15 @@ qemuBuildUSBInputDevStr(virDomainDefPtr def,
 {
     virBuffer buf = VIR_BUFFER_INITIALIZER;
 
-    virBufferAsprintf(&buf, "%s,id=%s",
-                      dev->type == VIR_DOMAIN_INPUT_TYPE_MOUSE ?
-                      "usb-mouse" : "usb-tablet", dev->info.alias);
+    if (dev->type == VIR_DOMAIN_INPUT_TYPE_MOUSE) {
+        virBufferAsprintf(&buf, "usb-mouse,id=%s", dev->info.alias);
+    } else if (dev->type == VIR_DOMAIN_INPUT_TYPE_TABLET) {
+        virBufferAsprintf(&buf, "usb-tablet,id=%s", dev->info.alias);
+    } else if (dev->type == VIR_DOMAIN_INPUT_TYPE_KBD) {
+        if (!virQEMUCapsGet(qemuCaps, QEMU_CAPS_DEVICE_USB_KBD))
+            goto error;
+        virBufferAsprintf(&buf, "usb-kbd,id=%s", dev->info.alias);
+    }
 
     if (qemuBuildDeviceAddressStr(&buf, def, &dev->info, qemuCaps) < 0)
         goto error;
