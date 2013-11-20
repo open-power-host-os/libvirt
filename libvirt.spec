@@ -1,6 +1,6 @@
 # -*- rpm-spec -*-
 
-ExclusiveArch: ppc64
+ExclusiveArch: ppc64 x86_64
 
 # If neither fedora nor rhel was defined, try to guess them from %{dist}
 %if !0%{?rhel} && !0%{?fedora}
@@ -2049,6 +2049,8 @@ fi
 
 
 %changelog
+* Wed Nov 20 2013 Wang Sen<wangsen@linux.vnet.ibm.com> 1.1.3-1
+- Build parity x86 packages.
 * Mon Nov 18 2013 Eli Qiao<qiaoly@cn.ibm.com> 1.1.3-1
 - Fix migration with qemu 1.6(pbuild4 respin2)
 * Fri Nov 08 2013 Wang Sen<wangsen@linux.vnet.ibm.com> 1.1.3-1
