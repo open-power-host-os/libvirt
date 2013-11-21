@@ -11985,18 +11985,6 @@ qemuParseCommandLine(virCapsPtr qemuCaps,
         def->videos[def->nvideos++] = vid;
     }
 
-    /*
-     * having a balloon is the default, define one with type="none" to avoid it
-     */
-    if (!def->memballoon) {
-        virDomainMemballoonDefPtr memballoon;
-        if (VIR_ALLOC(memballoon) < 0)
-            goto error;
-        memballoon->model = VIR_DOMAIN_MEMBALLOON_MODEL_VIRTIO;
-
-        def->memballoon = memballoon;
-    }
-
     VIR_FREE(nics);
 
     if (virDomainDefAddImplicitControllers(def) < 0)
