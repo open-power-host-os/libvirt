@@ -39,6 +39,7 @@
 #include "virstring.h"
 
 #define VIR_FROM_THIS VIR_FROM_SYSINFO
+#define SYSINFO_SIZE  65536
 
 
 VIR_ENUM_IMPL(virSysinfo, VIR_SYSINFO_LAST,
@@ -223,7 +224,7 @@ virSysinfoRead(void) {
     if (VIR_ALLOC(ret) < 0)
         goto no_memory;
 
-    if (virFileReadAll(CPUINFO, 2048, &outbuf) < 0) {
+    if (virFileReadAll(CPUINFO, SYSINFO_SIZE, &outbuf) < 0) {
         virReportError(VIR_ERR_INTERNAL_ERROR,
                        _("Failed to open %s"), CPUINFO);
         return NULL;
