@@ -347,7 +347,7 @@ ExclusiveArch: ppc64 x86_64
 Summary: Library providing a simple virtualization API
 Name: libvirt
 Version: 1.1.3
-%define release .0
+%define release .1
 %define frobisher_release .5
 Release: 1%{?dist}%{frobisher_release}%{?release}%{?extra_release}
 # MCP: exclude cross arches for this package
@@ -2050,6 +2050,8 @@ fi
 
 
 %changelog
+* Tue Nov 26 2013 Wang Sen<wangsen@linux.vnet.ibm.com> 1.1.3-1.5
+- Build5 update1: Fix for numatune to set node for live and current option
 * Tue Nov 26 2013 Wang Sen<wangsen@linux.vnet.ibm.com> 1.1.3-1.5
 - Modify the release format for pbuild5
 * Wed Nov 20 2013 Wang Sen<wangsen@linux.vnet.ibm.com> 1.1.3-1
