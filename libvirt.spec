@@ -347,8 +347,9 @@ ExclusiveArch: ppc64 x86_64
 Summary: Library providing a simple virtualization API
 Name: libvirt
 Version: 1.1.3
-%define mcp_release .4
-Release: 1%{?dist}%{?mcp_release}%{?extra_release}
+%define release .0
+%define frobisher_release .5
+Release: 1%{?dist}%{frobisher_release}%{?release}%{?extra_release}
 # MCP: exclude cross arches for this package
 ExcludeArch: %{cross_arches}
 License: LGPLv2+
@@ -2049,6 +2050,8 @@ fi
 
 
 %changelog
+* Tue Nov 26 2013 Wang Sen<wangsen@linux.vnet.ibm.com> 1.1.3-1.5
+- Modify the release format for pbuild5
 * Wed Nov 20 2013 Wang Sen<wangsen@linux.vnet.ibm.com> 1.1.3-1
 - Bump mcp_release to 4 for pbuild5.
 * Wed Nov 20 2013 Wang Sen<wangsen@linux.vnet.ibm.com> 1.1.3-1
