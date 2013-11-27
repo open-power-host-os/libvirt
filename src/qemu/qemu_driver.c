@@ -5797,6 +5797,7 @@ static char *qemuConnectDomainXMLToNative(virConnectPtr conn,
         virDomainNetDefPtr net = def->nets[i];
         int bootIndex = net->info.bootIndex;
         char *model = net->model;
+        virMacAddr mac = net->mac;
 
         if (net->type == VIR_DOMAIN_NET_TYPE_NETWORK) {
             int actualType = virDomainNetGetActualType(net);
@@ -5856,6 +5857,7 @@ static char *qemuConnectDomainXMLToNative(virConnectPtr conn,
         VIR_FREE(net->virtPortProfile);
         net->info.bootIndex = bootIndex;
         net->model = model;
+        net->mac = mac;
     }
 
     monitor_json = virQEMUCapsGet(qemuCaps, QEMU_CAPS_MONITOR_JSON);
