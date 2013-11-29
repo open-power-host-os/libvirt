@@ -244,12 +244,19 @@ ppcModelLoad(xmlXPathContextPtr ctxt,
         }
     }
 
-    if (!virXPathBoolean("boolean(./pvr)", ctxt) ||
-        virXPathULongHex("string(./pvr/@value)", ctxt, &pvr) < 0) {
-        virReportError(VIR_ERR_INTERNAL_ERROR,
-                       _("Missing or invalid PVR value in CPU model %s"),
+    if (STREQ(model->name, "host")) {
+#if defined(__powerpc__) || defined(__powerpc64__)
+        asm("mfpvr %0"
+        : "=r" (pvr));
+#endif
+    } else {
+        if (!virXPathBoolean("boolean(./pvr)", ctxt) ||
+            virXPathULongHex("string(./pvr/@value)", ctxt, &pvr) < 0) {
+            virReportError(VIR_ERR_INTERNAL_ERROR,
+                           _("Missing or invalid PVR value in CPU model %s"),
                        model->name);
-        goto ignore;
+            goto ignore;
+        }
     }
     model->data.pvr = pvr;
 
