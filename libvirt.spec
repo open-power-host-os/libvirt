@@ -347,7 +347,7 @@ ExclusiveArch: ppc64 x86_64
 Summary: Library providing a simple virtualization API
 Name: libvirt
 Version: 1.1.3
-%define release .1
+%define release .2
 %define frobisher_release .5
 Release: 1%{?dist}%{frobisher_release}%{?release}%{?extra_release}
 # MCP: exclude cross arches for this package
@@ -2050,6 +2050,12 @@ fi
 
 
 %changelog
+* Fri Nov 29 2013 Qiao Li Yong<qiaoly@cn.ibm.com> 1.1.3-1.5
+- Build5 update2
+- Add support of host cpu model
+- Disable ACS check when doing PCI passthrough
+- Enlarge the sysinfo buffer size
+- virsh domxml-from-native to treat SCSI as the bus type for pseries by default
 * Tue Nov 26 2013 Wang Sen<wangsen@linux.vnet.ibm.com> 1.1.3-1.5
 - Build5 update1: Fix for numatune to set node for live and current option
 * Tue Nov 26 2013 Wang Sen<wangsen@linux.vnet.ibm.com> 1.1.3-1.5
