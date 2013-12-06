@@ -8105,6 +8105,84 @@ cleanup:
 }
 
 static int
+qemuDomainSetNumaParamsLive(virDomainObjPtr vm,
+                            virCapsPtr caps,
+                            virBitmapPtr nodeset)
+{
+    virCgroupPtr cgroup_temp = NULL;
+    virBitmapPtr temp_nodeset = NULL;
+    qemuDomainObjPrivatePtr priv = vm->privateData;
+    char *nodeset_str = NULL;
+    size_t i = 0;
+    int ret = -1;
+
+    if (vm->def->numatune.memory.mode != VIR_DOMAIN_NUMATUNE_MEM_STRICT) {
+        virReportError(VIR_ERR_OPERATION_INVALID, "%s",
+                       _("change of nodeset for running domain "
+                         "requires strict numa mode"));
+        goto cleanup;
+    }
+
+    /*Get Exisitng nodeset values */
+    if (virCgroupGetCpusetMems(priv->cgroup, &nodeset_str) < 0 ||
+        virBitmapParse(nodeset_str, 0, &temp_nodeset,
+                       VIR_DOMAIN_CPUMASK_LEN) < 0)
+        goto cleanup;
+    VIR_FREE(nodeset_str);
+
+    for (i = 0; i < caps->host.nnumaCell; i++) {
+        bool result;
+        if (virBitmapGetBit(nodeset, i, &result) < 0) {
+            virReportError(VIR_ERR_INTERNAL_ERROR, "%s",
+                           _("Failed to get cpuset bit values"));
+            goto cleanup;
+        }
+        if (result && (virBitmapSetBit(temp_nodeset, i) < 0)) {
+            virReportError(VIR_ERR_INTERNAL_ERROR, "%s",
+                           _("Failed to set temporary cpuset bit values"));
+            goto cleanup;
+        }
+    }
+
+    if (!(nodeset_str = virBitmapFormat(temp_nodeset))) {
+        virReportError(VIR_ERR_INTERNAL_ERROR, "%s",
+                       _("Failed to format nodeset"));
+        goto cleanup;
+    }
+
+    if (virCgroupSetCpusetMems(priv->cgroup, nodeset_str) < 0)
+        goto cleanup;
+    VIR_FREE(nodeset_str);
+
+    /* Ensure the cpuset string is formated before passing to cgroup */
+    if (!(nodeset_str = virBitmapFormat(nodeset))) {
+        virReportError(VIR_ERR_INTERNAL_ERROR, "%s",
+                       _("Failed to format nodeset"));
+        goto cleanup;
+    }
+
+    for (i = 0; i < priv->nvcpupids; i++) {
+        if (virCgroupNewVcpu(priv->cgroup, i, false, &cgroup_temp) < 0 ||
+            virCgroupSetCpusetMems(cgroup_temp, nodeset_str) < 0)
+            goto cleanup;
+        virCgroupFree(&cgroup_temp);
+    }
+
+    if (virCgroupNewEmulator(priv->cgroup, false, &cgroup_temp) < 0 ||
+        virCgroupSetCpusetMems(cgroup_temp, nodeset_str) < 0 ||
+        virCgroupSetCpusetMems(priv->cgroup, nodeset_str) < 0)
+        goto cleanup;
+
+    ret = 0;
+cleanup:
+    VIR_FREE(nodeset_str);
+    virBitmapFree(temp_nodeset);
+    virCgroupFree(&cgroup_temp);
+
+    return ret;
+}
+
+static int
 qemuDomainSetNumaParameters(virDomainPtr dom,
                             virTypedParameterPtr params,
                             int nparams,
@@ -8171,11 +8249,6 @@ qemuDomainSetNumaParameters(virDomainPtr dom,
             }
         } else if (STREQ(param->field, VIR_DOMAIN_NUMA_NODESET)) {
             virBitmapPtr nodeset = NULL;
-            virBitmapPtr old_nodeset = NULL;
-            virBitmapPtr temp_nodeset = NULL;
-            char *nodeset_str = NULL;
-            char *old_nodeset_str = NULL;
-            char *temp_nodeset_str = NULL;
 
             if (virBitmapParse(params[i].value.s,
                                0, &nodeset,
@@ -8185,157 +8258,11 @@ qemuDomainSetNumaParameters(virDomainPtr dom,
             }
 
             if (flags & VIR_DOMAIN_AFFECT_LIVE) {
-                size_t j;
-                virCgroupPtr cgroup_vcpu = NULL;
-                virCgroupPtr cgroup_emulator = NULL;
-
-                if (vm->def->numatune.memory.mode !=
-                    VIR_DOMAIN_NUMATUNE_MEM_STRICT) {
-                    virReportError(VIR_ERR_OPERATION_INVALID, "%s",
-                                   _("change of nodeset for running domain "
-                                     "requires strict numa mode"));
+                if (qemuDomainSetNumaParamsLive(vm, caps, nodeset) < 0) {
                     virBitmapFree(nodeset);
                     ret = -1;
                     continue;
                 }
-
-                /* Ensure the cpuset string is formated before passing to cgroup */
-                if (!(nodeset_str = virBitmapFormat(nodeset))) {
-                    virReportError(VIR_ERR_INTERNAL_ERROR, "%s",
-                                   _("Failed to format nodeset"));
-                    virBitmapFree(nodeset);
-                    ret = -1;
-                    continue;
-                }
-
-                if (virCgroupGetCpusetMems(priv->cgroup, &old_nodeset_str) < 0) {
-                    virReportError(VIR_ERR_INTERNAL_ERROR, "%s",
-                                   _("Failed to get current system nodeset values"));
-                    virBitmapFree(nodeset);
-                    VIR_FREE(nodeset_str);
-                    ret = -1;
-                    continue;
-                }
-
-                if (virBitmapParse(old_nodeset_str, 0, &old_nodeset,
-                                   VIR_DOMAIN_CPUMASK_LEN) < 0) {
-                    virBitmapFree(nodeset);
-                    VIR_FREE(nodeset_str);
-                    VIR_FREE(old_nodeset_str);
-                    ret = -1;
-                    continue;
-                }
-
-                if ((temp_nodeset = virBitmapNewCopy(old_nodeset)) == NULL) {
-                    virBitmapFree(nodeset);
-                    VIR_FREE(nodeset_str);
-                    virBitmapFree(old_nodeset);
-                    VIR_FREE(old_nodeset_str);
-                    ret = -1;
-                    continue;
-                }
-                virBitmapFree(old_nodeset);
-                VIR_FREE(old_nodeset_str);
-
-                for (j = 0; j < caps->host.nnumaCell; j++) {
-                    bool result;
-                    if (virBitmapGetBit(nodeset, j, &result) < 0) {
-                        virReportError(VIR_ERR_INTERNAL_ERROR, "%s",
-                                       _("Failed to get cpuset bit values"));
-                        ret = -1;
-                        break;
-                    }
-                    if (result && (virBitmapSetBit(temp_nodeset, j) < 0)) {
-                        virReportError(VIR_ERR_INTERNAL_ERROR, "%s",
-                                       _("Failed to set temporary cpuset bit values"));
-                        ret = -1;
-                        break;
-                    }
-                }
-
-                if (ret) {
-                    virBitmapFree(nodeset);
-                    VIR_FREE(nodeset_str);
-                    virBitmapFree(temp_nodeset);
-                    continue;
-                }
-
-                if (!(temp_nodeset_str = virBitmapFormat(temp_nodeset))) {
-                    virReportError(VIR_ERR_INTERNAL_ERROR, "%s",
-                                   _("Failed to format nodeset"));
-                    virBitmapFree(nodeset);
-                    VIR_FREE(nodeset_str);
-                    virBitmapFree(temp_nodeset);
-                    ret = -1;
-                    continue;
-                }
-
-                if (virCgroupSetCpusetMems(priv->cgroup, temp_nodeset_str) < 0) {
-                    virReportError(VIR_ERR_INTERNAL_ERROR, "%s",
-                                   _("Failed to set cpuset values"));
-                    virBitmapFree(nodeset);
-                    VIR_FREE(nodeset_str);
-                    virBitmapFree(temp_nodeset);
-                    VIR_FREE(temp_nodeset_str);
-                    ret = -1;
-                    continue;
-                }
-
-                virBitmapFree(temp_nodeset);
-                VIR_FREE(temp_nodeset_str);
-
-                for (j = 0; j < priv->nvcpupids; j++) {
-                    if (virCgroupNewVcpu(priv->cgroup, j, false, &cgroup_vcpu) < 0) {
-                        virReportError(VIR_ERR_INTERNAL_ERROR,
-                                       _("Failed to get cpuset values for vcpu%zu"), j);
-                        ret = -1;
-                        break;
-                    }
-                    if (virCgroupSetCpusetMems(cgroup_vcpu, nodeset_str) < 0) {
-                        virReportError(VIR_ERR_INTERNAL_ERROR,
-                                       _("Failed to set cpuset values for vcpu%zu"), j);
-                        virCgroupFree(&cgroup_vcpu);
-                        ret = -1;
-                        break;
-                    }
-                    virCgroupFree(&cgroup_vcpu);
-                }
-
-                if (ret) {
-                    virBitmapFree(nodeset);
-                    VIR_FREE(nodeset_str);
-                    continue;
-                }
-
-                if (virCgroupNewEmulator(priv->cgroup, false, &cgroup_emulator) < 0) {
-                    virReportError(VIR_ERR_INTERNAL_ERROR, "%s",
-                                   _("Failed to get cpuset values for emulator"));
-                    virBitmapFree(nodeset);
-                    VIR_FREE(nodeset_str);
-                    ret = -1;
-                    continue;
-                }
-
-                if (virCgroupSetCpusetMems(cgroup_emulator, nodeset_str) < 0) {
-                    virReportError(VIR_ERR_INTERNAL_ERROR, "%s",
-                                   _("Failed to set cpuset values for emulator"));
-                    virBitmapFree(nodeset);
-                    VIR_FREE(nodeset_str);
-                    virCgroupFree(&cgroup_emulator);
-                    ret = -1;
-                    continue;
-                }
-                virCgroupFree(&cgroup_emulator);
-
-                if (virCgroupSetCpusetMems(priv->cgroup, nodeset_str) < 0) {
-                    virReportError(VIR_ERR_INTERNAL_ERROR, "%s",
-                                   _("Failed to set cpuset"));
-                    virBitmapFree(nodeset);
-                    VIR_FREE(nodeset_str);
-                    ret = -1;
-                    continue;
-                }
-                VIR_FREE(nodeset_str);
 
                 /* update vm->def here so that dumpxml can read the new
                  * values from vm->def. */
