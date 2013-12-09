@@ -532,6 +532,18 @@ qemuSetupDevicesCgroup(virQEMUDriverPtr driver,
             goto cleanup;
     }
 
+    if (vm->def->rng &&
+        (vm->def->rng->backend == VIR_DOMAIN_RNG_BACKEND_RANDOM)) {
+            VIR_DEBUG("Setting Cgroup ACL for RNG device");
+            rv = virCgroupAllowDevicePath(priv->cgroup, vm->def->rng->source.file,
+                                           VIR_CGROUP_DEVICE_RW);
+            virDomainAuditCgroupPath(vm, priv->cgroup, "allow",
+                                      vm->def->rng->source.file, "rw", rv == 0);
+            if (rv < 0 &&
+                 !virLastErrorIsSystemErrno(ENOENT))
+                goto cleanup;
+    }
+
     ret = 0;
 cleanup:
     virObjectUnref(cfg);
