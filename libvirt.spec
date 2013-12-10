@@ -1,6 +1,6 @@
 # -*- rpm-spec -*-
 
-ExclusiveArch: ppc64 x86_64
+ExclusiveArch: ppc64
 
 # If neither fedora nor rhel was defined, try to guess them from %{dist}
 %if !0%{?rhel} && !0%{?fedora}
@@ -347,8 +347,8 @@ ExclusiveArch: ppc64 x86_64
 Summary: Library providing a simple virtualization API
 Name: libvirt
 Version: 1.1.3
-%define release .2
-%define frobisher_release .5
+%define release .0
+%define frobisher_release .6
 Release: 1%{?dist}%{frobisher_release}%{?release}%{?extra_release}
 # MCP: exclude cross arches for this package
 ExcludeArch: %{cross_arches}
@@ -2050,6 +2050,12 @@ fi
 
 
 %changelog
+* Tue Dec 10 2013 Wang Sen<wangsen@linux.vnet.ibm.com> 1.1.3-1.6
+- Build6:
+  -- Merge 3 patches:
+  dc5f93b qemu: preserve netdev MAC address during 'domxml-to-native'
+  9e34fae Add hw random number generator (/dev/hwrng) to cgroup ACL
+  c4ff46f Fix for numatune to set node for live and current option
 * Fri Nov 29 2013 Qiao Li Yong<qiaoly@cn.ibm.com> 1.1.3-1.5
 - Build5 update2
 - Add support of host cpu model
