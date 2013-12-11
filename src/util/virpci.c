@@ -348,6 +348,34 @@ virPCIDeviceRead32(virPCIDevicePtr dev, int cfgfd, unsigned int pos)
 }
 
 static int
+virPCIDeviceReadClass(virPCIDevicePtr dev, uint16_t *device_class)
+{
+    char *path = NULL;
+    char *id_str;
+    int ret = 0;
+    unsigned int value;
+
+    if (virPCIFile(&path, dev->name, "class") < 0)
+        return -1;
+
+    /* class string is '0xNNNNNN\n' ... i.e. 9 bytes */
+    if (virFileReadAll(path, 9, &id_str) < 0) {
+        VIR_FREE(path);
+        return -1;
+    }
+
+    VIR_FREE(path);
+
+    id_str[8] = '\0';
+    ret = virStrToLong_ui(id_str, NULL, 16, &value);
+    if (ret == 0)
+        *device_class = (value >> 8) & 0xFFFF;
+
+    VIR_FREE(id_str);
+    return ret;
+}
+
+static int
 virPCIDeviceWrite(virPCIDevicePtr dev,
                   int cfgfd,
                   unsigned int pos,
@@ -648,8 +676,8 @@ virPCIDeviceIsParent(virPCIDevicePtr dev, virPCIDevicePtr check, void *data)
         return 0;
 
     /* Is it a bridge? */
-    device_class = virPCIDeviceRead16(check, fd, PCI_CLASS_DEVICE);
-    if (device_class != PCI_CLASS_BRIDGE_PCI)
+    ret = virPCIDeviceReadClass(check, &device_class);
+    if (ret == -1 || device_class != PCI_CLASS_BRIDGE_PCI)
         goto cleanup;
 
     /* Is it a plane? */
@@ -2120,6 +2148,7 @@ virPCIDeviceDownstreamLacksACS(virPCIDevicePtr dev)
     unsigned int pos;
     int fd;
     int ret = 0;
+    uint16_t device_class;
 
     if ((fd = virPCIDeviceConfigOpen(dev, true)) < 0)
         return -1;
@@ -2129,8 +2158,11 @@ virPCIDeviceDownstreamLacksACS(virPCIDevicePtr dev)
         goto cleanup;
     }
 
+    if (virPCIDeviceReadClass(dev, &device_class))
+        goto cleanup;
+
     pos = dev->pcie_cap_pos;
-    if (!pos || virPCIDeviceRead16(dev, fd, PCI_CLASS_DEVICE) != PCI_CLASS_BRIDGE_PCI)
+    if (!pos || device_class != PCI_CLASS_BRIDGE_PCI)
         goto cleanup;
 
     flags = virPCIDeviceRead16(dev, fd, pos + PCI_EXP_FLAGS);
