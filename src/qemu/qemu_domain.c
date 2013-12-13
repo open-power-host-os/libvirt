@@ -793,7 +793,8 @@ qemuDomainDefPostParse(virDomainDefPtr def,
 static const char *
 qemuDomainDefaultNetModel(virDomainDefPtr def) {
     if (def->os.arch == VIR_ARCH_S390 ||
-        def->os.arch == VIR_ARCH_S390X)
+        def->os.arch == VIR_ARCH_S390X ||
+        def->os.arch == VIR_ARCH_PPC64)
         return "virtio";
 
     if (def->os.arch == VIR_ARCH_ARMV7L) {
