@@ -348,7 +348,7 @@ Summary: Library providing a simple virtualization API
 Name: libvirt
 Version: 1.1.3
 %define release .0
-%define frobisher_release .6
+%define frobisher_release .7
 Release: 1%{?dist}%{frobisher_release}%{?release}%{?extra_release}
 # MCP: exclude cross arches for this package
 ExcludeArch: %{cross_arches}
@@ -2050,6 +2050,10 @@ fi
 
 
 %changelog
+* Wed Jan 08 2014 Wang Sen<wangsen@linux.vnet.ibm.com> 1.1.3-1.7
+- Build7:
+  1949403 libvirt: Read PCI class from sysfs class file instead of config space.
+  f6e795a Make virtio as the default net device for PPC64
 * Tue Dec 10 2013 Wang Sen<wangsen@linux.vnet.ibm.com> 1.1.3-1.6
 - Build6:
   -- Merge 3 patches:
