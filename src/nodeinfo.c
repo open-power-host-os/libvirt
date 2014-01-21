@@ -597,7 +597,7 @@ int linuxNodeGetCPUStats(FILE *procstat,
     char line[1024];
     unsigned long long usr, ni, sys, idle, iowait;
     unsigned long long irq, softirq, steal, guest, guest_nice;
-    char cpu_header[3 + INT_BUFSIZE_BOUND(cpuNum)];
+    char cpu_header[4 + INT_BUFSIZE_BOUND(cpuNum)];
 
     if ((*nparams) == 0) {
         /* Current number of cpu stats supported by linux */
