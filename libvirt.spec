@@ -348,7 +348,7 @@ Summary: Library providing a simple virtualization API
 Name: libvirt
 Version: 1.1.3
 %define release .0
-%define frobisher_release .7
+%define frobisher_release .8
 Release: 1%{?dist}%{frobisher_release}%{?release}%{?extra_release}
 # MCP: exclude cross arches for this package
 ExcludeArch: %{cross_arches}
@@ -2050,6 +2050,10 @@ fi
 
 
 %changelog
+* Wed Jan 22 2014 Wang Sen<wangsen@linux.vnet.ibm.com> 1.1.3-1.8
+- Build8:
+  bec63e4 nodedev: Resolve Relax-NG validity error (Bug 100524)
+  32db53b Change the default unix monitor timeout to 30 sec (Bug 100915)
 * Wed Jan 08 2014 Wang Sen<wangsen@linux.vnet.ibm.com> 1.1.3-1.7
 - Build7:
   1949403 libvirt: Read PCI class from sysfs class file instead of config space.
