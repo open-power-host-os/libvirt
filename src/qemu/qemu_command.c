@@ -5264,14 +5264,18 @@ qemuBuildUSBInputDevStr(virDomainDefPtr def,
 {
     virBuffer buf = VIR_BUFFER_INITIALIZER;
 
-    if (dev->type == VIR_DOMAIN_INPUT_TYPE_MOUSE) {
+    switch (dev->type) {
+    case VIR_DOMAIN_INPUT_TYPE_MOUSE:
         virBufferAsprintf(&buf, "usb-mouse,id=%s", dev->info.alias);
-    } else if (dev->type == VIR_DOMAIN_INPUT_TYPE_TABLET) {
+        break;
+    case VIR_DOMAIN_INPUT_TYPE_TABLET:
         virBufferAsprintf(&buf, "usb-tablet,id=%s", dev->info.alias);
-    } else if (dev->type == VIR_DOMAIN_INPUT_TYPE_KBD) {
+        break;
+    case VIR_DOMAIN_INPUT_TYPE_KBD:
         if (!virQEMUCapsGet(qemuCaps, QEMU_CAPS_DEVICE_USB_KBD))
             goto error;
         virBufferAsprintf(&buf, "usb-kbd,id=%s", dev->info.alias);
+        break;
     }
 
     if (qemuBuildDeviceAddressStr(&buf, def, &dev->info, qemuCaps) < 0)
@@ -8942,9 +8946,17 @@ qemuBuildCommandLine(virConnectPtr conn,
                 virCommandAddArg(cmd, optstr);
                 VIR_FREE(optstr);
             } else {
-                virCommandAddArgList(cmd, "-usbdevice",
-                                     input->type == VIR_DOMAIN_INPUT_TYPE_MOUSE
-                                     ? "mouse" : "tablet", NULL);
+                switch (input->type) {
+                    case VIR_DOMAIN_INPUT_TYPE_MOUSE:
+                        virCommandAddArgList(cmd, "-usbdevice", "mouse", NULL);
+                        break;
+                    case VIR_DOMAIN_INPUT_TYPE_TABLET:
+                        virCommandAddArgList(cmd, "-usbdevice", "tablet", NULL);
+                        break;
+                    case VIR_DOMAIN_INPUT_TYPE_KBD:
+                        virCommandAddArgList(cmd, "-usbdevice", "kbd", NULL);
+                        break;
+                }
             }
         }
     }
@@ -11629,20 +11641,23 @@ qemuParseCommandLine(virCapsPtr qemuCaps,
         } else if (STREQ(arg, "-usbdevice")) {
             WANT_VALUE();
             if (STREQ(val, "tablet") ||
-                STREQ(val, "mouse")) {
+                STREQ(val, "mouse") ||
+                STREQ(val, "kbd")) {
                 virDomainInputDefPtr input;
                 if (VIR_ALLOC(input) < 0)
                     goto error;
                 input->bus = VIR_DOMAIN_INPUT_BUS_USB;
                 if (STREQ(val, "tablet"))
                     input->type = VIR_DOMAIN_INPUT_TYPE_TABLET;
-                else
+                else if (STREQ(val, "mouse"))
                     input->type = VIR_DOMAIN_INPUT_TYPE_MOUSE;
-                if (VIR_REALLOC_N(def->inputs, def->ninputs+1) < 0) {
+                else
+                    input->type = VIR_DOMAIN_INPUT_TYPE_KBD;
+
+                if (VIR_APPEND_ELEMENT(def->inputs, def->ninputs, input) < 0) {
                     virDomainInputDefFree(input);
                     goto error;
                 }
-                def->inputs[def->ninputs++] = input;
             } else if (STRPREFIX(val, "disk:")) {
                 if (VIR_ALLOC(disk) < 0)
                     goto error;
