@@ -2733,6 +2733,10 @@ virDomainDefMaybeAddController(virDomainDefPtr def,
                                int type,
                                int idx,
                                int model);
+int
+virDomainDefMaybeAddInput(virDomainDefPtr def,
+                          int type,
+                          int bus);
 
 char *virDomainDefGetDefaultEmulator(virDomainDefPtr def, virCapsPtr caps);
 

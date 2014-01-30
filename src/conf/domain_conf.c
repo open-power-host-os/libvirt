@@ -10698,6 +10698,35 @@ virDomainDefMaybeAddController(virDomainDefPtr def,
     return 0;
 }
 
+int
+virDomainDefMaybeAddInput(virDomainDefPtr def,
+                               int type,
+                               int bus)
+{
+    size_t i;
+    virDomainInputDefPtr input;
+
+    for (i = 0; i < def->ninputs; i++) {
+        if (def->inputs[i]->type == type &&
+            def->inputs[i]->bus == bus)
+            return 0;
+    }
+
+    if (VIR_ALLOC(input) < 0)
+        return -1;
+
+    input->type = type;
+    input->bus = bus;
+
+    if (VIR_APPEND_ELEMENT(def->inputs, def->ninputs, input) < 0) {
+        VIR_FREE(input);
+        return -1;
+    }
+
+    return 0;
+}
+
+
 
 /* Parse a memory element located at XPATH within CTXT, and store the
  * result into MEM.  If REQUIRED, then the value must exist;
