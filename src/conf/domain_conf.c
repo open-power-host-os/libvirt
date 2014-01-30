@@ -7506,7 +7506,8 @@ virDomainInputDefParseXML(const char *ostype,
 
         if (STREQ(ostype, "hvm")) {
             if (def->bus == VIR_DOMAIN_INPUT_BUS_PS2 && /* Only allow mouse for ps2 */
-                def->type != VIR_DOMAIN_INPUT_TYPE_MOUSE) {
+                !(def->type == VIR_DOMAIN_INPUT_TYPE_MOUSE ||
+                def->type == VIR_DOMAIN_INPUT_TYPE_KBD)) {
                 virReportError(VIR_ERR_INTERNAL_ERROR,
                                _("ps2 bus does not support %s input device"),
                                type);
@@ -7524,7 +7525,8 @@ virDomainInputDefParseXML(const char *ostype,
                                _("unsupported input bus %s"),
                                bus);
             }
-            if (def->type != VIR_DOMAIN_INPUT_TYPE_MOUSE) {
+            if (def->type != VIR_DOMAIN_INPUT_TYPE_MOUSE &&
+                def->type != VIR_DOMAIN_INPUT_TYPE_KBD) {
                 virReportError(VIR_ERR_INTERNAL_ERROR,
                                _("xen bus does not support %s input device"),
                                type);
@@ -7533,7 +7535,8 @@ virDomainInputDefParseXML(const char *ostype,
         }
     } else {
         if (STREQ(ostype, "hvm")) {
-            if (def->type == VIR_DOMAIN_INPUT_TYPE_MOUSE)
+            if (def->type == VIR_DOMAIN_INPUT_TYPE_MOUSE ||
+                def->type == VIR_DOMAIN_INPUT_TYPE_KBD)
                 def->bus = VIR_DOMAIN_INPUT_BUS_PS2;
             else
                 def->bus = VIR_DOMAIN_INPUT_BUS_USB;
@@ -12047,10 +12050,12 @@ virDomainDefParseXML(xmlDocPtr xml,
          * XXX will this be true for other virt types ? */
         if ((STREQ(def->os.type, "hvm") &&
              input->bus == VIR_DOMAIN_INPUT_BUS_PS2 &&
-             input->type == VIR_DOMAIN_INPUT_TYPE_MOUSE) ||
+             (input->type == VIR_DOMAIN_INPUT_TYPE_MOUSE ||
+              input->type == VIR_DOMAIN_INPUT_TYPE_KBD)) ||
             (STRNEQ(def->os.type, "hvm") &&
              input->bus == VIR_DOMAIN_INPUT_BUS_XEN &&
-             input->type == VIR_DOMAIN_INPUT_TYPE_MOUSE)) {
+             (input->type == VIR_DOMAIN_INPUT_TYPE_MOUSE ||
+              input->type == VIR_DOMAIN_INPUT_TYPE_KBD))) {
             virDomainInputDefFree(input);
             continue;
         }
