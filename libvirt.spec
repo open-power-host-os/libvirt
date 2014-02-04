@@ -348,7 +348,7 @@ Summary: Library providing a simple virtualization API
 Name: libvirt
 Version: 1.1.3
 %define release .0
-%define frobisher_release .8
+%define frobisher_release .10
 Release: 1%{?dist}%{frobisher_release}%{?release}%{?extra_release}
 # MCP: exclude cross arches for this package
 ExcludeArch: %{cross_arches}
@@ -2050,6 +2050,16 @@ fi
 
 
 %changelog
+* Tue Feb 4 2014 Crístian Viana <vianac@linux.vnet.ibm.com> 1.1.3-1.10
+- linuxNodeGetCPUStats: Correctly handle cpu prefix
+- Fix buffer size in linuxNodeGetCPUstats
+- Add a keyboard input device type
+- conf: Add one interface to add default input devices.
+- conf: Remove PS2 mouse device for non-X86 platforms
+- qemu: parse qemu command line for USB keyboard
+- Add a default USB keyboard and USB mouse for PPC64
+- Bump SPEC file to pbeta1
+
 * Wed Jan 22 2014 Wang Sen<wangsen@linux.vnet.ibm.com> 1.1.3-1.8
 - Build8:
   bec63e4 nodedev: Resolve Relax-NG validity error (Bug 100524)
