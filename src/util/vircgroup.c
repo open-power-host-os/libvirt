@@ -72,6 +72,7 @@ typedef enum {
                                        * before creating subcgroups and
                                        * attaching tasks
                                        */
+    VIR_CGROUP_CPUS_HIERACHY = 1 << 1, /* call virCgroupCpuSetInherit */
 } virCgroupFlags;
 
 
@@ -883,6 +884,7 @@ virCgroupMakeGroup(virCgroupPtr parent,
     VIR_DEBUG("Make group %s", group->path);
     for (i = 0; i < VIR_CGROUP_CONTROLLER_LAST; i++) {
         char *path = NULL;
+        int inheritCpuset = 0;
 
         /* We must never mkdir() in systemd's hierarchy */
         if (i == VIR_CGROUP_CONTROLLER_SYSTEMD) {
@@ -925,15 +927,7 @@ virCgroupMakeGroup(virCgroupPtr parent,
                     goto cleanup;
                 }
             }
-            if (group->controllers[VIR_CGROUP_CONTROLLER_CPUSET].mountPoint != NULL &&
-                (i == VIR_CGROUP_CONTROLLER_CPUSET ||
-                 STREQ(group->controllers[i].mountPoint,
-                       group->controllers[VIR_CGROUP_CONTROLLER_CPUSET].mountPoint))) {
-                if (virCgroupCpuSetInherit(parent, group) < 0) {
-                    VIR_FREE(path);
-                    goto cleanup;
-                }
-            }
+            inheritCpuset = 1;
             /*
              * Note that virCgroupSetMemoryUseHierarchy should always be
              * called prior to creating subcgroups and attaching tasks.
@@ -944,6 +938,19 @@ virCgroupMakeGroup(virCgroupPtr parent,
                  STREQ(group->controllers[i].mountPoint,
                        group->controllers[VIR_CGROUP_CONTROLLER_MEMORY].mountPoint))) {
                 if (virCgroupSetMemoryUseHierarchy(group) < 0) {
+                    VIR_FREE(path);
+                    goto cleanup;
+                }
+            }
+        }
+
+        if (inheritCpuset || (flags & VIR_CGROUP_CPUS_HIERACHY))
+        {
+            if (group->controllers[VIR_CGROUP_CONTROLLER_CPUSET].mountPoint != NULL &&
+                (i == VIR_CGROUP_CONTROLLER_CPUSET ||
+                 STREQ(group->controllers[i].mountPoint,
+                       group->controllers[VIR_CGROUP_CONTROLLER_CPUSET].mountPoint))) {
+                if (virCgroupCpuSetInherit(parent, group) < 0) {
                     VIR_FREE(path);
                     goto cleanup;
                 }
@@ -1267,7 +1274,7 @@ virCgroupNewPartition(const char *path,
         if (virCgroupNew(-1, parentPath, NULL, controllers, &parent) < 0)
             goto cleanup;
 
-        if (virCgroupMakeGroup(parent, *group, create, VIR_CGROUP_NONE) < 0) {
+        if (virCgroupMakeGroup(parent, *group, create, VIR_CGROUP_CPUS_HIERACHY) < 0) {
             virCgroupRemove(*group);
             goto cleanup;
         }
