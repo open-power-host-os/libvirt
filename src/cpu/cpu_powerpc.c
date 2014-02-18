@@ -90,7 +90,12 @@ ppcModelFindPVR(const struct ppc_map *map,
 
     model = map->models;
     while (model != NULL) {
-        if (model->data.pvr == pvr)
+        /*IBM PowerPC processors encode PVR as CPU family in higher 16 bits and
+         *a CPU version in lower 16 bits. Since there is no significant change
+         *in behavior between versions, there is no point to add every single CPU
+         *version in cpu_map.xml
+        */
+        if ((model->data.pvr & 0xFFFF0000) == (pvr & 0xFFFF0000))
             return model;
 
         model = model->next;
