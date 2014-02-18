@@ -454,8 +454,8 @@ ppcCompare(virCPUDefPtr host,
 static int
 ppcDecode(virCPUDefPtr cpu,
           const virCPUDataPtr data,
-          const char **models,
-          unsigned int nmodels,
+          const char **models ATTRIBUTE_UNUSED,
+          unsigned int nmodels ATTRIBUTE_UNUSED,
           const char *preferred ATTRIBUTE_UNUSED,
           unsigned int flags)
 {
@@ -475,13 +475,6 @@ ppcDecode(virCPUDefPtr cpu,
         goto cleanup;
     }
 
-    if (!cpuModelIsAllowed(model->name, models, nmodels)) {
-        virReportError(VIR_ERR_CONFIG_UNSUPPORTED,
-                       _("CPU model %s is not supported by hypervisor"),
-                       model->name);
-        goto cleanup;
-    }
-
     if (VIR_STRDUP(cpu->model, model->name) < 0 ||
         (model->vendor && VIR_STRDUP(cpu->vendor, model->vendor->name) < 0)) {
         goto cleanup;
@@ -494,7 +487,6 @@ cleanup:
 
     return ret;
 }
-
 
 static void
 ppcDataFree(virCPUDataPtr data)
@@ -558,8 +550,8 @@ ppcUpdate(virCPUDefPtr guest,
 static virCPUDefPtr
 ppcBaseline(virCPUDefPtr *cpus,
             unsigned int ncpus,
-            const char **models,
-            unsigned int nmodels,
+            const char **models ATTRIBUTE_UNUSED,
+            unsigned int nmodels ATTRIBUTE_UNUSED,
             unsigned int flags)
 {
     struct ppc_map *map = NULL;
@@ -576,13 +568,6 @@ ppcBaseline(virCPUDefPtr *cpus,
     if (!(model = ppcModelFind(map, cpus[0]->model))) {
         virReportError(VIR_ERR_INTERNAL_ERROR,
                        _("Unknown CPU model %s"), cpus[0]->model);
-        goto error;
-    }
-
-    if (!cpuModelIsAllowed(model->name, models, nmodels)) {
-        virReportError(VIR_ERR_CONFIG_UNSUPPORTED,
-                        _("CPU model %s is not supported by hypervisor"),
-                        model->name);
         goto error;
     }
 
