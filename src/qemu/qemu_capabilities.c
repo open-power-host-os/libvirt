@@ -2170,9 +2170,6 @@ virQEMUCapsProbeQMPCPUDefinitions(virQEMUCapsPtr qemuCaps,
     qemuCaps->ncpuDefinitions = ncpuDefinitions;
     qemuCaps->cpuDefinitions = cpuDefinitions;
 
-    if (virQEMUCapsAddCPUDefinition(qemuCaps, "host") < 0)
-        return -1;
-
     return 0;
 }
 

@@ -629,9 +629,5 @@
       <pvr value='0x004b0100'/>
     </model>
 
-    <model name='host'>
-       <vendor name='IBM'/>
-    </model>
-
   </arch>
 </cpus>
