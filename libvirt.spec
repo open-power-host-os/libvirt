@@ -2,6 +2,8 @@
 
 ExclusiveArch: ppc64
 
+%define mcp 8
+
 # If neither fedora nor rhel was defined, try to guess them from %{dist}
 %if !0%{?rhel} && !0%{?fedora}
 %{expand:%(echo "%{?dist}" | \
