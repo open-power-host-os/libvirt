@@ -865,6 +865,16 @@ virQEMUCapsInitCPU(virCapsPtr caps,
         || cpuDecode(cpu, data, NULL, 0, NULL) < 0)
         goto cleanup;
 
+    /*For Power arch check if we are running nested aka PR_KVM mode*/
+    if ((arch == VIR_ARCH_PPC64) &&
+            virFileExists("/dev/kvm") &&
+            virFileExists("/sys/module/kvm_pr") &&
+            !virFileExists("/sys/module/kvm_hv")){
+
+        if (virCapabilitiesAddHostFeature(caps, "prkvm") < 0)
+            goto cleanup;
+    }
+
     ret = 0;
 
 cleanup:
