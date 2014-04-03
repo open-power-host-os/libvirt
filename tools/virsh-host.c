@@ -995,7 +995,7 @@ const vshCmdDef hostAndHypervisorCmds[] = {
      .handler = cmdNodeSuspend,
      .opts = opts_node_suspend,
      .info = info_nodesuspend,
-     .flags = 0
+     .flags = VSH_CMD_FLAG_UNSUPPORTED
     },
     {.name = "sysinfo",
      .handler = cmdSysinfo,

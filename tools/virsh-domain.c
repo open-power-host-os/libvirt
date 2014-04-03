@@ -10678,7 +10678,7 @@ const vshCmdDef domManagementCmds[] = {
      .handler = cmdInjectNMI,
      .opts = opts_inject_nmi,
      .info = info_inject_nmi,
-     .flags = 0
+     .flags = VSH_CMD_FLAG_UNSUPPORTED
     },
     {.name = "send-key",
      .handler = cmdSendKey,
@@ -10762,7 +10762,7 @@ const vshCmdDef domManagementCmds[] = {
      .handler = cmdQemuAttach,
      .opts = opts_qemu_attach,
      .info = info_qemu_attach,
-     .flags = 0
+     .flags = VSH_CMD_FLAG_UNSUPPORTED
     },
     {.name = "qemu-monitor-command",
      .handler = cmdQemuMonitorCommand,
@@ -10774,7 +10774,7 @@ const vshCmdDef domManagementCmds[] = {
      .handler = cmdQemuAgentCommand,
      .opts = opts_qemu_agent_command,
      .info = info_qemu_agent_command,
-     .flags = 0
+     .flags = VSH_CMD_FLAG_UNSUPPORTED
     },
     {.name = "reboot",
      .handler = cmdReboot,
@@ -10840,7 +10840,7 @@ const vshCmdDef domManagementCmds[] = {
      .handler = cmdSetmaxmem,
      .opts = opts_setmaxmem,
      .info = info_setmaxmem,
-     .flags = 0
+     .flags = VSH_CMD_FLAG_UNSUPPORTED
     },
     {.name = "setmem",
      .handler = cmdSetmem,

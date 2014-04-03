@@ -1926,6 +1926,7 @@ virStringFreeList;
 virStringJoin;
 virStringListLength;
 virStringSplit;
+virStringUpper;
 virStrncpy;
 virStrndup;
 virStrToDouble;
@@ -1937,7 +1938,6 @@ virStrToLong_ul;
 virStrToLong_ull;
 virTrimSpaces;
 virVasprintfInternal;
-virStringUpper;
 
 
 # util/virsysinfo.h

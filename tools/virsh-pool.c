@@ -1817,13 +1817,13 @@ const vshCmdDef storagePoolCmds[] = {
      .handler = cmdPoolDiscoverSourcesAs,
      .opts = opts_find_storage_pool_sources_as,
      .info = info_find_storage_pool_sources_as,
-     .flags = 0
+     .flags = VSH_CMD_FLAG_UNSUPPORTED
     },
     {.name = "find-storage-pool-sources",
      .handler = cmdPoolDiscoverSources,
      .opts = opts_find_storage_pool_sources,
      .info = info_find_storage_pool_sources,
-     .flags = 0
+     .flags = VSH_CMD_FLAG_UNSUPPORTED
     },
     {.name = "pool-autostart",
      .handler = cmdPoolAutostart,

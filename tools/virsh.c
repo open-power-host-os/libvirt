@@ -1115,6 +1115,11 @@ vshCommandCheckOpts(vshControl *ctl, const vshCmd *cmd, uint32_t opts_required,
     if (!opts_required)
         return 0;
 
+    if (def->flags & VSH_CMD_FLAG_UNSUPPORTED) {
+        vshError(ctl, _("Not supported on this platform"));
+        return -1;
+    }
+
     for (i = 0; def->opts[i].name; i++) {
         if (opts_required & (1 << i)) {
             const vshCmdOptDef *opt = &def->opts[i];

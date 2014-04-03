@@ -49,5 +49,5 @@ module Test_libvirtd =
         { "audit_logging" = "1" }
         { "host_uuid" = "00000000-0000-0000-0000-000000000000" }
         { "keepalive_interval" = "5" }
-        { "keepalive_count" = "5" }
+        { "keepalive_count" = "50" }
         { "keepalive_required" = "1" }
