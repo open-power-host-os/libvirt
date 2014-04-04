@@ -2644,6 +2644,9 @@ virQEMUCapsInitQMP(virQEMUCapsPtr qemuCaps,
     if (qemuCaps->version >= 1006000)
         virQEMUCapsSet(qemuCaps, QEMU_CAPS_DEVICE_VIDEO_PRIMARY);
 
+    if (qemuCaps->version >= 2000000)
+        virQEMUCapsSet(qemuCaps, QEMU_CAPS_PCI_MULTIBUS);
+
     if (virQEMUCapsProbeQMPCommands(qemuCaps, mon) < 0)
         goto cleanup;
     if (virQEMUCapsProbeQMPEvents(qemuCaps, mon) < 0)
