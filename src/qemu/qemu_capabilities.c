@@ -2469,6 +2469,7 @@ virQEMUCapsInitQMPBasic(virQEMUCapsPtr qemuCaps)
     virQEMUCapsSet(qemuCaps, QEMU_CAPS_MACHINE_OPT);
     virQEMUCapsSet(qemuCaps, QEMU_CAPS_DUMP_GUEST_CORE);
     virQEMUCapsSet(qemuCaps, QEMU_CAPS_VNC_SHARE_POLICY);
+    virQEMUCapsSet(qemuCaps, QEMU_CAPS_PCI_MULTIBUS);
 }
 
 /* Capabilities that are architecture depending
@@ -2643,9 +2644,6 @@ virQEMUCapsInitQMP(virQEMUCapsPtr qemuCaps,
 
     if (qemuCaps->version >= 1006000)
         virQEMUCapsSet(qemuCaps, QEMU_CAPS_DEVICE_VIDEO_PRIMARY);
-
-    if (qemuCaps->version >= 2000000)
-        virQEMUCapsSet(qemuCaps, QEMU_CAPS_PCI_MULTIBUS);
 
     if (virQEMUCapsProbeQMPCommands(qemuCaps, mon) < 0)
         goto cleanup;
