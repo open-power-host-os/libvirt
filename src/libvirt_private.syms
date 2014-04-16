@@ -1926,7 +1926,6 @@ virStringFreeList;
 virStringJoin;
 virStringListLength;
 virStringSplit;
-virStringUpper;
 virStrncpy;
 virStrndup;
 virStrToDouble;
