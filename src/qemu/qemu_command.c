@@ -6677,13 +6677,8 @@ qemuBuildCpuArgStr(const virQEMUDriverPtr driver,
                 goto cleanup;
 
             if (def->os.arch == VIR_ARCH_PPC64) {
-                if (virStringArrayHasString(caps->host.features, "prkvm")) {
-                    virStringUpper(guest->model);
-                    virBufferAdd(&buf, guest->model, -1);
-                } else {
-                    virBufferAdd(&buf, "host", -1);
-                    virBufferAsprintf(&buf, ",compat=%s", guest->model);
-                }
+                virBufferAdd(&buf, "host", -1);
+                virBufferAsprintf(&buf, ",compat=%s", guest->model);
             } else
                 virBufferAdd(&buf, guest->model, -1);
 

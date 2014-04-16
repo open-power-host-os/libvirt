@@ -616,20 +616,3 @@ size_t virStringListLength(char **strings)
 
     return i;
 }
-
-
-/**
- *virStringUpper
- * @str: String to modify
- *
- * Convert the string to UpperCase
- *
-*/
-void
-virStringUpper(char *str)
-{
-    for (; *str != '\0'; ++str) {
-        *str = c_toupper(*str);
-    }
-}
-
