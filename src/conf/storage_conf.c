@@ -2081,8 +2081,10 @@ virStoragePoolSourceFindDuplicate(virStoragePoolObjListPtr pools,
                     STREQ(pool->def->source.adapter.data.fchost.wwpn,
                           def->source.adapter.data.fchost.wwpn))
                     matchpool = pool;
-            } else if (pool->def->source.adapter.type ==
-                       VIR_STORAGE_POOL_SOURCE_ADAPTER_TYPE_SCSI_HOST){
+            } else if ((pool->def->source.adapter.type ==
+                        VIR_STORAGE_POOL_SOURCE_ADAPTER_TYPE_SCSI_HOST)\
+                        && (def->source.adapter.type ==
+                           VIR_STORAGE_POOL_SOURCE_ADAPTER_TYPE_SCSI_HOST)) {
                 if (STREQ(pool->def->source.adapter.data.name,
                           def->source.adapter.data.name))
                     matchpool = pool;
