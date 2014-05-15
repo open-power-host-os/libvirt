@@ -6899,15 +6899,15 @@ static int qemuDomainAttachDeviceFlags(virDomainPtr dom, const char *xml,
     dev = dev_copy = virDomainDeviceDefParse(xml, vm->def,
                                              caps, driver->xmlopt,
                                              parse_flags);
+    if (dev == NULL)
+        goto endjob;
+
     if ((vm->def->os.arch == VIR_ARCH_PPC64) && (flags & VIR_DOMAIN_AFFECT_LIVE)
         && (dev->type == VIR_DOMAIN_DEVICE_NET))
         if (dev->data.net->model && STREQ(dev->data.net->model, "virtio")) {
             dev->data.net->driver.virtio.name = VIR_DOMAIN_NET_BACKEND_TYPE_QEMU;
             dev_copy->data.net->driver.virtio.name = VIR_DOMAIN_NET_BACKEND_TYPE_QEMU;
         }
-
-    if (dev == NULL)
-        goto endjob;
 
     if (flags & VIR_DOMAIN_AFFECT_CONFIG &&
         flags & VIR_DOMAIN_AFFECT_LIVE) {
