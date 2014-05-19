@@ -518,9 +518,10 @@ qemuDomainAttachSCSIDisk(virConnectPtr conn,
        and hence the above loop must iterate at least once.  */
     sa_assert(cont);
 
-    if (cont->info.type != VIR_DOMAIN_DEVICE_ADDRESS_TYPE_PCI) {
+    if (cont->info.type != VIR_DOMAIN_DEVICE_ADDRESS_TYPE_PCI &&
+        cont->info.type != VIR_DOMAIN_DEVICE_ADDRESS_TYPE_SPAPRVIO) {
         virReportError(VIR_ERR_INTERNAL_ERROR,
-                       _("SCSI controller %d was missing its PCI address"), cont->idx);
+                       _("SCSI controller %d was missing its address"), cont->idx);
         goto error;
     }
 
