@@ -496,7 +496,7 @@ cpuTestRun(const char *name, const struct data *data)
 static const char *model486[]   = { "486" };
 static const char *nomodel[]    = { "nomodel" };
 static const char *models[]     = { "qemu64", "core2duo", "Nehalem" };
-static const char *ppc_models[]     = { "POWER7", "POWER7_v2.1", "POWER8_v1.0"};
+static const char *ppc_models[]     = { "power6", "power7"};
 
 static int
 mymain(void)
@@ -642,7 +642,7 @@ mymain(void)
                       models, "Penryn", -1);
 
     DO_TEST_GUESTDATA("ppc64", "host", "guest", ppc_models, NULL, 0);
-    DO_TEST_GUESTDATA("ppc64", "host", "guest-nofallback", ppc_models, "POWER7_v2.1", -1);
+    DO_TEST_GUESTDATA("ppc64", "host", "guest-nofallback", ppc_models, "power7", -1);
 
     return ret == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
 }
