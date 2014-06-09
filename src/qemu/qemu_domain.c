@@ -1529,7 +1529,7 @@ qemuDomainDefFormatBuf(virQEMUDriverPtr driver,
                 usb = def->controllers[i];
             }
         }
-        if (usb && usb->idx == 0 && usb->model == -1) {
+        if (def->os.arch != VIR_ARCH_PPC64 && usb && usb->idx == 0 && usb->model == -1) {
             VIR_DEBUG("Removing default USB controller from domain '%s'"
                       " for migration compatibility", def->name);
             toremove++;
