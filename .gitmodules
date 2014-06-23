@@ -1,3 +1,3 @@
 [submodule "gnulib"]
 	path = .gnulib
-	url = git://ltcphx.austin.ibm.com/frobisher/gnulib.git
+	url = git://9.3.189.26/frobisher/gnulib.git
