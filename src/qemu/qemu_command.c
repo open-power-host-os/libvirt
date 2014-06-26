@@ -4757,6 +4757,7 @@ qemuBuildUSBInputDevStr(virDomainDefPtr def,
         virBufferAsprintf(&buf, "usb-tablet,id=%s", dev->info.alias);
         break;
     case VIR_DOMAIN_INPUT_TYPE_KBD:
+    case VIR_DOMAIN_INPUT_TYPE_KEYBOARD:
         if (!virQEMUCapsGet(qemuCaps, QEMU_CAPS_DEVICE_USB_KBD))
             goto error;
         virBufferAsprintf(&buf, "usb-kbd,id=%s", dev->info.alias);
@@ -8599,6 +8600,7 @@ qemuBuildCommandLine(virConnectPtr conn,
                         virCommandAddArgList(cmd, "-usbdevice", "tablet", NULL);
                         break;
                     case VIR_DOMAIN_INPUT_TYPE_KBD:
+                    case VIR_DOMAIN_INPUT_TYPE_KEYBOARD:
                         virCommandAddArgList(cmd, "-usbdevice", "keyboard", NULL);
                         break;
                 }

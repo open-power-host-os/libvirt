@@ -483,7 +483,8 @@ VIR_ENUM_IMPL(virDomainVideo, VIR_DOMAIN_VIDEO_TYPE_LAST,
 VIR_ENUM_IMPL(virDomainInput, VIR_DOMAIN_INPUT_TYPE_LAST,
               "mouse",
               "tablet",
-              "keyboard")
+              "keyboard",
+              "kbd")
 
 VIR_ENUM_IMPL(virDomainInputBus, VIR_DOMAIN_INPUT_BUS_LAST,
               "ps2",
@@ -7908,7 +7909,8 @@ virDomainInputDefParseXML(const virDomainDef *dom,
         if (STREQ(dom->os.type, "hvm")) {
             if (def->bus == VIR_DOMAIN_INPUT_BUS_PS2 &&
                 def->type != VIR_DOMAIN_INPUT_TYPE_MOUSE &&
-                def->type != VIR_DOMAIN_INPUT_TYPE_KBD) {
+                def->type != VIR_DOMAIN_INPUT_TYPE_KBD  &&
+                def->type != VIR_DOMAIN_INPUT_TYPE_KEYBOARD) {
                 virReportError(VIR_ERR_INTERNAL_ERROR,
                                _("ps2 bus does not support %s input device"),
                                type);
@@ -7927,7 +7929,8 @@ virDomainInputDefParseXML(const virDomainDef *dom,
                                bus);
             }
             if (def->type != VIR_DOMAIN_INPUT_TYPE_MOUSE &&
-                def->type != VIR_DOMAIN_INPUT_TYPE_KBD) {
+                def->type != VIR_DOMAIN_INPUT_TYPE_KBD  &&
+                def->type != VIR_DOMAIN_INPUT_TYPE_KEYBOARD) {
                 virReportError(VIR_ERR_INTERNAL_ERROR,
                                _("xen bus does not support %s input device"),
                                type);
@@ -7937,7 +7940,8 @@ virDomainInputDefParseXML(const virDomainDef *dom,
     } else {
         if (STREQ(dom->os.type, "hvm")) {
             if ((def->type == VIR_DOMAIN_INPUT_TYPE_MOUSE ||
-                def->type == VIR_DOMAIN_INPUT_TYPE_KBD) &&
+                def->type == VIR_DOMAIN_INPUT_TYPE_KBD ||
+                def->type == VIR_DOMAIN_INPUT_TYPE_KEYBOARD) &&
                 (ARCH_IS_X86(dom->os.arch) || dom->os.arch == VIR_ARCH_NONE)) {
                 def->bus = VIR_DOMAIN_INPUT_BUS_PS2;
             } else {
@@ -11106,6 +11110,10 @@ virDomainDefMaybeAddInput(virDomainDefPtr def,
         if (def->inputs[i]->type == type &&
             def->inputs[i]->bus == bus)
             return 0;
+        if (def->inputs[i]->type == VIR_DOMAIN_INPUT_TYPE_KEYBOARD) {
+            def->inputs[i]->type = VIR_DOMAIN_INPUT_TYPE_KBD;
+            return 0;
+        }
     }
 
     if (VIR_ALLOC(input) < 0)
@@ -12501,11 +12509,13 @@ virDomainDefParseXML(xmlDocPtr xml,
         if ((STREQ(def->os.type, "hvm") &&
              input->bus == VIR_DOMAIN_INPUT_BUS_PS2 &&
              (input->type == VIR_DOMAIN_INPUT_TYPE_MOUSE ||
-              input->type == VIR_DOMAIN_INPUT_TYPE_KBD)) ||
+              input->type == VIR_DOMAIN_INPUT_TYPE_KBD ||
+              input->type == VIR_DOMAIN_INPUT_TYPE_KEYBOARD)) ||
             (STRNEQ(def->os.type, "hvm") &&
              input->bus == VIR_DOMAIN_INPUT_BUS_XEN &&
              (input->type == VIR_DOMAIN_INPUT_TYPE_MOUSE ||
-              input->type == VIR_DOMAIN_INPUT_TYPE_KBD))) {
+              input->type == VIR_DOMAIN_INPUT_TYPE_KBD ||
+              input->type == VIR_DOMAIN_INPUT_TYPE_KEYBOARD))) {
             virDomainInputDefFree(input);
             continue;
         }
