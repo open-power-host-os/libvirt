@@ -160,7 +160,7 @@ daemonConfigNew(bool privileged ATTRIBUTE_UNUSED)
     data->audit_logging = 0;
 
     data->keepalive_interval = 5;
-    data->keepalive_count = 5;
+    data->keepalive_count = 50;
 
     data->admin_min_workers = 5;
     data->admin_max_workers = 20;
