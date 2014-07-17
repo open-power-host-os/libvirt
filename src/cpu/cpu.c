@@ -492,9 +492,39 @@ cpuGetArchModelsCb(enum cpuMapElement element,
 static int
 cpuGetArchModels(const char *arch, struct cpuGetModelsData *data)
 {
-    return cpuMapLoad(arch, cpuGetArchModelsCb, data);
-}
+    char *model_name = NULL;
 
+    if (STREQ(arch, "ppc64")) {
+        if (VIR_STRDUP(model_name, "power6") >= 0) {
+            if (VIR_INSERT_ELEMENT(data->data, data->len - 1, data->len,
+                                                           model_name) < 0) {
+                VIR_FREE(model_name);
+                goto error;
+                }
+            }
+        if (VIR_STRDUP(model_name, "power7") >= 0) {
+            if (VIR_INSERT_ELEMENT(data->data, data->len - 1, data->len,
+                                                           model_name) < 0) {
+                VIR_FREE(model_name);
+                goto error;
+                }
+           }
+
+        if (VIR_STRDUP(model_name, "power8") >= 0) {
+            if (VIR_INSERT_ELEMENT(data->data, data->len - 1, data->len,
+                                                             model_name) < 0) {
+                VIR_FREE(model_name);
+                goto error;
+                }
+           }
+        return 0;
+    } else
+        return cpuMapLoad(arch, cpuGetArchModelsCb, data);
+
+ error:
+    virStringFreeList(data->data);
+    return -1;
+}
 
 int
 cpuGetModels(const char *archName, char ***models)
