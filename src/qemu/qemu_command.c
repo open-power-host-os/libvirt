@@ -4971,33 +4971,62 @@ qemuOpenPCIConfig(virDomainHostdevDefPtr dev)
     return configfd;
 }
 
-char *
-qemuBuildSPAPRVFIODevStr(virDomainHostdevDefPtr dev,
-                         virQEMUCapsPtr qemuCaps)
+int
+qemuBuildSPAPRVFIODeviceCommandLine(virCommandPtr cmd, virDomainDefPtr def, virQEMUCapsPtr qemuCaps)
 {
-    int iommuGroup;
-    virPCIDeviceAddressPtr addr;
-    virBuffer buf = VIR_BUFFER_INITIALIZER;
+    size_t i, j, nIommuGroupCount = 0;
+    int *iommuGroupNums = NULL;
+    int ret = -1;
 
-    addr = (virPCIDeviceAddressPtr)&dev->source.subsys.u.pci.addr;
-    if ((iommuGroup = virPCIDeviceAddressGetIOMMUGroupNum(addr)) < 0)
-        goto cleanup;
-    if (!virQEMUCapsGet(qemuCaps, QEMU_CAPS_SPAPR_VFIO_BRIDGE)) {
-        virReportError(VIR_ERR_CONFIG_UNSUPPORTED, "%s",
-                       _("SPAPR_VFIO_BRIDGE is not supported by QEMU"));
-        goto cleanup;
+    if (!virQEMUCapsGet(qemuCaps, QEMU_CAPS_SPAPR_VFIO_BRIDGE))
+       return 0;
+
+    for (i = 0; i < def->nhostdevs; i++) {
+        virDomainHostdevDefPtr hostdev = def->hostdevs[i];
+        if (hostdev->mode == VIR_DOMAIN_HOSTDEV_MODE_SUBSYS &&
+            hostdev->source.subsys.type == VIR_DOMAIN_HOSTDEV_SUBSYS_TYPE_PCI &&
+            hostdev->source.subsys.u.pci.backend ==
+            VIR_DOMAIN_HOSTDEV_PCI_BACKEND_VFIO) {
+            int iommu = -1;
+            virPCIDeviceAddressPtr addr;
+
+            addr = (virPCIDeviceAddressPtr)&hostdev->source.subsys.u.pci.addr;
+            if ((iommu = virPCIDeviceAddressGetIOMMUGroupNum(addr)) < 0)
+                goto error;
+
+            for (j = 0; j < nIommuGroupCount; j++) {
+                if (iommuGroupNums[j] == iommu) {
+                    iommu = -1;
+                    break;
+                }
+            }
+            if (iommu != -1) {
+                if (VIR_REALLOC_N(iommuGroupNums, nIommuGroupCount+1) < 0)
+                    goto error;
+                iommuGroupNums[nIommuGroupCount++] = iommu;
+            }
+        }
     }
 
-    virBufferAddLit(&buf, "spapr-pci-vfio-host-bridge");
-    virBufferAsprintf(&buf, ",iommu=%d", iommuGroup);
-    virBufferAsprintf(&buf, ",id=VFIOBUS%d", iommuGroup);
-    virBufferAsprintf(&buf, ",index=%d", iommuGroup + 1);
+    if (nIommuGroupCount) {
+       for (i = 0; i < nIommuGroupCount; i++) {
+          char *devstr;
+          virCommandAddArg(cmd, "-device");
+          ignore_value(virAsprintf(&devstr,
+                                   "spapr-pci-vfio-host-bridge,iommu=%d,id=VFIOBUS%d,index=%d",
+                                   iommuGroupNums[i], iommuGroupNums[i],
+                                   iommuGroupNums[i] + 1));
+          if (!devstr)
+              goto error;
+          virCommandAddArg(cmd, devstr);
+          VIR_FREE(devstr);
+       }
+    }
 
-    return virBufferContentAndReset(&buf);
-
- cleanup:
-    virBufferFreeAndReset(&buf);
-    return NULL;
+    ret = 0;
+ error:
+    VIR_FREE(iommuGroupNums);
+    return ret;
 }
 
 char *
@@ -8941,6 +8970,12 @@ qemuBuildCommandLine(virConnectPtr conn,
     }
 
     /* Add host passthrough hardware */
+    if (def->os.arch == VIR_ARCH_PPC64 && STREQ(def->os.machine, "pseries")) {
+       if (qemuBuildSPAPRVFIODeviceCommandLine(cmd, def, qemuCaps) < 0) {
+               goto error;
+       }
+    }
+
     for (i = 0; i < def->nhostdevs; i++) {
         virDomainHostdevDefPtr hostdev = def->hostdevs[i];
         char *devstr;
@@ -9028,17 +9063,6 @@ qemuBuildCommandLine(virConnectPtr conn,
 
             if (virQEMUCapsGet(qemuCaps, QEMU_CAPS_DEVICE)) {
                 char *configfd_name = NULL;
-                if (virQEMUCapsGet(qemuCaps, QEMU_CAPS_SPAPR_VFIO_BRIDGE) &&
-                    hostdev->source.subsys.u.pci.backend ==
-                    VIR_DOMAIN_HOSTDEV_PCI_BACKEND_VFIO &&
-                    def->os.arch == VIR_ARCH_PPC64) {
-                    virCommandAddArg(cmd, "-device");
-                    devstr = qemuBuildSPAPRVFIODevStr(hostdev, qemuCaps);
-                    if (!devstr)
-                        goto error;
-                    virCommandAddArg(cmd, devstr);
-                    VIR_FREE(devstr);
-                }
                 if ((backend != VIR_DOMAIN_HOSTDEV_PCI_BACKEND_VFIO) &&
                     virQEMUCapsGet(qemuCaps, QEMU_CAPS_PCI_CONFIGFD)) {
                     int configfd = qemuOpenPCIConfig(hostdev);
