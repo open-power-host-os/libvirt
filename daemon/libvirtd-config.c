@@ -277,7 +277,7 @@ daemonConfigNew(bool privileged ATTRIBUTE_UNUSED)
     data->audit_logging = 0;
 
     data->keepalive_interval = 5;
-    data->keepalive_count = 5;
+    data->keepalive_count = 50;
     data->keepalive_required = 0;
 
     localhost = virGetHostname();
