@@ -67,6 +67,8 @@ VIR_LOG_INIT("qemu.qemu_command");
 #define VIO_ADDR_SCSI 0x2000ul
 #define VIO_ADDR_SERIAL 0x30000000ul
 #define VIO_ADDR_NVRAM 0x3000ul
+#define MEMINFO "/proc/meminfo"
+#define MEMINFO_FILE_LEN 10*1024
 
 VIR_ENUM_DECL(virDomainDiskQEMUBus)
 VIR_ENUM_IMPL(virDomainDiskQEMUBus, VIR_DOMAIN_DISK_BUS_LAST,
@@ -149,6 +151,45 @@ VIR_ENUM_IMPL(qemuDomainFSDriver, VIR_DOMAIN_FS_DRIVER_TYPE_LAST,
               NULL,
               NULL);
 
+static int virGetHugepageSize(void)
+{
+    char *outbuf = NULL;
+    const char *cur = NULL;
+    char *eol = NULL;
+    unsigned int hugepage_size = 0;
+
+    if (virFileReadAll(MEMINFO, MEMINFO_FILE_LEN, &outbuf) < 0) {
+        virReportError(VIR_ERR_INTERNAL_ERROR,
+                       _("Failed to open %s"), MEMINFO);
+        return -1;
+    }
+
+    if ((cur = strstr(outbuf, "Hugepagesize")) == NULL) {
+        virReportError(VIR_ERR_INTERNAL_ERROR, "%s",
+                       _("Hugepages not available : possibly not mounted ?"));
+        VIR_FREE(outbuf);
+        return -1;
+    }
+
+    cur = strchr(cur, ':') + 1;
+
+    /* Hugepage listing in /proc/meminfo goes in KBs, like this:
+     * Hugepagesize:       2048 kB
+     * Parse based on this assumption.
+     * This will need a change if kernel-published format changes
+     */
+    eol = strstr(cur, "kB\n");
+    virSkipSpaces(&cur);
+
+    if (virStrToLong_ui(cur, &eol, 10, &hugepage_size) < 0) {
+        virReportError(VIR_ERR_INTERNAL_ERROR, "%s",
+                       _("Unable to get Hugepage size"));
+        VIR_FREE(outbuf);
+        return -1;
+    }
+
+    return hugepage_size * 1024;
+}
 
 /**
  * qemuPhysIfaceConnect:
@@ -7269,6 +7310,7 @@ qemuBuildCommandLine(virConnectPtr conn,
     int actualSerials = 0;
     bool usblegacy = false;
     bool mlock = false;
+    int hugepage_size;
     int contOrder[] = {
         /* We don't add an explicit IDE or FD controller because the
          * provided PIIX4 device already includes one. It isn't possible to
@@ -7409,6 +7451,19 @@ qemuBuildCommandLine(virConnectPtr conn,
             virReportError(VIR_ERR_INTERNAL_ERROR,
                            _("hugepage backing not supported by '%s'"),
                            def->emulator);
+            goto error;
+        }
+
+        hugepage_size = virGetHugepageSize();
+        if (hugepage_size < 0) {
+            virReportError(VIR_ERR_INTERNAL_ERROR, "%s",
+                           _("Unable to obtain hugepage size"));
+            goto error;
+
+        }
+        if ((def->mem.max_balloon * 1024) % hugepage_size) {
+            virReportError(VIR_ERR_INTERNAL_ERROR, "%s",
+                   _("Given memory should be a multiple of hugepage size"));
             goto error;
         }
         virCommandAddArgList(cmd, "-mem-prealloc", "-mem-path",
