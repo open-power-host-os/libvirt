@@ -251,6 +251,35 @@ qemuPhysIfaceConnect(virDomainDefPtr def,
     return -1;
 }
 
+char *
+qemuGetSPAPRVFIOHostDevContAliasString(virDomainDefPtr def, virDomainDeviceInfoPtr info)
+{
+    size_t i;
+    int iommu;
+    virBuffer buf = VIR_BUFFER_INITIALIZER;
+
+    for (i = 0; i < def->nhostdevs; i++) {
+        virDomainHostdevDefPtr hostdev = def->hostdevs[i];
+        if (hostdev->mode == VIR_DOMAIN_HOSTDEV_MODE_SUBSYS &&
+            hostdev->source.subsys.type == VIR_DOMAIN_HOSTDEV_SUBSYS_TYPE_PCI &&
+            hostdev->source.subsys.u.pci.backend ==
+            VIR_DOMAIN_HOSTDEV_PCI_BACKEND_VFIO) {
+            if (STREQ(info->alias, hostdev->info->alias)) {
+                virPCIDeviceAddressPtr addr;
+                addr = (virPCIDeviceAddressPtr)&hostdev->source.subsys.u.pci.addr;
+                if ((iommu = virPCIDeviceAddressGetIOMMUGroupNum(addr)) < 0)
+                    goto error;
+                virBufferAsprintf(&buf, "VFIOBUS%d.%d", iommu, 0);
+            }
+        }
+    }
+    return virBufferContentAndReset(&buf);
+ error:
+    virBufferFreeAndReset(&buf);
+    return NULL;
+
+}
+
 
 /**
  * qemuCreateInBridgePortWithHelper:
@@ -2558,7 +2587,21 @@ qemuBuildDeviceAddressStr(virBufferPtr buf,
          * PCI_MULTIBUS capability indicates that the implicit
          * PCI bus is named 'pci.0' instead of 'pci'.
          */
-        if (info->addr.pci.bus != 0) {
+
+        if (virQEMUCapsGet(qemuCaps, QEMU_CAPS_SPAPR_VFIO_BRIDGE) && STREQLEN(info->alias, "hostdev", strlen("hostdev")))
+        {
+            contAlias = qemuGetSPAPRVFIOHostDevContAliasString(domainDef, info);
+            if (!contAlias) {
+                    virReportError(VIR_ERR_INTERNAL_ERROR,
+                                   _("Device alias was not set for PCI "
+                                     "controller with index %u required "
+                                     "for device at address %s"),
+                                   info->addr.pci.bus, devStr);
+                    goto cleanup;
+            }
+            virBufferAsprintf(buf, ",bus=%s", contAlias);
+            VIR_FREE(contAlias);
+        } else if (info->addr.pci.bus != 0) {
             if (virQEMUCapsGet(qemuCaps, QEMU_CAPS_DEVICE_PCI_BRIDGE)) {
                 virBufferAsprintf(buf, ",bus=%s", contAlias);
             } else {

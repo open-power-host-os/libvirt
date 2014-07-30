@@ -160,6 +160,9 @@ char * qemuBuildPCIHostdevDevStr(virDomainDefPtr def,
                                  virDomainHostdevDefPtr dev,
                                  const char *configfd,
                                  virQEMUCapsPtr qemuCaps);
+char *
+qemuGetSPAPRVFIOHostDevContAliasString(virDomainDefPtr def,
+                                       virDomainDeviceInfoPtr info);
 
 int qemuBuildSPAPRVFIODeviceCommandLine(virCommandPtr cmd,
                                         virDomainDefPtr def,
