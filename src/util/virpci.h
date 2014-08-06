@@ -26,6 +26,8 @@
 
 # include "internal.h"
 # include "virobject.h"
+#define PCI_ID_LEN 10   /* "XXXX XXXX" */
+#define PCI_ADDR_LEN 13 /* "XXXX:XX:XX.X" */
 
 typedef struct _virPCIDevice virPCIDevice;
 typedef virPCIDevice *virPCIDevicePtr;
@@ -39,6 +41,40 @@ struct _virPCIDeviceAddress {
     unsigned int bus;
     unsigned int slot;
     unsigned int function;
+};
+
+struct _virPCIDevice {
+    unsigned int  domain;
+    unsigned int  bus;
+    unsigned int  slot;
+    unsigned int  function;
+
+    char          name[PCI_ADDR_LEN]; /* domain:bus:slot.function */
+    char          id[PCI_ID_LEN];     /* product vendor */
+    char          *path;
+
+    /* The driver:domain which uses the device */
+    char          *used_by_drvname;
+    char          *used_by_domname;
+
+    unsigned int  pcie_cap_pos;
+    unsigned int  pci_pm_cap_pos;
+    bool          has_flr;
+    bool          has_pm_reset;
+    bool          managed;
+    char          *stubDriver;
+
+    /* used by reattach function */
+    bool          unbind_from_stub;
+    bool          remove_slot;
+    bool          reprobe;
+};
+
+struct _virPCIDeviceList {
+        virObjectLockable parent;
+
+            size_t count;
+                virPCIDevicePtr *devs;
 };
 
 virPCIDevicePtr virPCIDeviceNew(unsigned int domain,

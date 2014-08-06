@@ -2189,6 +2189,90 @@ qemuDomainValidateDevicePCISlotsQ35(virDomainDefPtr def,
     return ret;
 }
 
+static
+virDomainHostdevDefPtr qemuDomainDefGetHostdevByPCIAddress(virDomainDefPtr def, virDevicePCIAddressPtr devaddr)
+{
+    size_t i;
+    virDomainHostdevDefPtr ret = NULL;
+
+    for (i = 0; i < def->nhostdevs; i++) {
+        virDomainHostdevDefPtr hostdev = def->hostdevs[i];
+        if (hostdev->mode == VIR_DOMAIN_HOSTDEV_MODE_SUBSYS &&
+            hostdev->source.subsys.type == VIR_DOMAIN_HOSTDEV_SUBSYS_TYPE_PCI) {
+            int backend = hostdev->source.subsys.u.pci.backend;
+
+            if (backend == VIR_DOMAIN_HOSTDEV_PCI_BACKEND_VFIO) {
+                if (virDevicePCIAddressEqual(devaddr, &hostdev->source.subsys.u.pci.addr)) {
+                    ret = hostdev;
+                    break;
+                }
+            }
+        }
+    }
+    return ret;
+}
+
+int qemuDomainPCIReassignHostdevAddress(virDomainDefPtr def,
+                                       virQEMUCapsPtr qemuCaps)
+{
+    size_t i, j;
+    virPCIDevicePtr curpcidev = NULL;
+
+    for (i = 0; i < def->nhostdevs; i++) {
+        virDomainHostdevDefPtr hostdev = def->hostdevs[i];
+        curpcidev = NULL;
+        if (hostdev->mode == VIR_DOMAIN_HOSTDEV_MODE_SUBSYS &&
+            hostdev->source.subsys.type == VIR_DOMAIN_HOSTDEV_SUBSYS_TYPE_PCI) {
+            int backend = hostdev->source.subsys.u.pci.backend;
+
+            if (backend == VIR_DOMAIN_HOSTDEV_PCI_BACKEND_VFIO) {
+                virPCIDeviceAddressPtr curhostdevpciaddr = (virPCIDeviceAddressPtr)&hostdev->source.subsys.u.pci.addr;
+
+                if (!virQEMUCapsGet(qemuCaps, QEMU_CAPS_DEVICE_VFIO_PCI)) {
+                    continue;
+                }
+
+                if (curhostdevpciaddr->function == 0) {
+                    curpcidev =  virPCIDeviceNew(curhostdevpciaddr->domain,
+                                                 curhostdevpciaddr->bus,
+                                                 curhostdevpciaddr->slot,
+                                                 curhostdevpciaddr->function);
+                    if (!curpcidev)
+                        goto error;
+                    virPCIDeviceListPtr devList = virPCIDeviceGetIOMMUGroupList(curpcidev);
+                    for (j = 0; j < devList->count; j++) {
+                        virDevicePCIAddress devaddr;
+                        virDomainHostdevDefPtr subfunchostdev = NULL;
+
+                        devaddr.function = devList->devs[j]->function;
+                        devaddr.domain = devList->devs[j]->domain;
+                        devaddr.slot = devList->devs[j]->slot;
+                        devaddr.bus = devList->devs[j]->bus;
+
+                        if (devaddr.function == 0) {
+                            continue;
+                        }
+                        subfunchostdev = qemuDomainDefGetHostdevByPCIAddress(def, &devaddr);
+                        if (!subfunchostdev) {
+                            continue;
+                        }
+                        hostdev->info->addr.pci.multi =
+                            VIR_DEVICE_ADDRESS_PCI_MULTI_ON;
+                        subfunchostdev->info->addr.pci.domain = hostdev->info->addr.pci.domain;
+                        subfunchostdev->info->addr.pci.bus = hostdev->info->addr.pci.bus;
+                        subfunchostdev->info->addr.pci.slot = hostdev->info->addr.pci.slot;
+                        subfunchostdev->info->addr.pci.function = devaddr.function;
+                    }
+                    virPCIDeviceFree(curpcidev);
+                    virObjectUnref(devList);
+                }
+            }
+        }
+    }
+    return 0;
+ error:
+    return -1;
+}
 
 /*
  * This assigns static PCI slots to all configured devices.
@@ -2441,6 +2525,13 @@ qemuAssignDevicePCISlots(virDomainDefPtr def,
                                                def->hostdevs[i]->info,
                                                flags) < 0)
             goto error;
+    }
+
+    if ((def->os.arch == VIR_ARCH_PPC64) && def->os.machine &&
+        STREQ(def->os.machine, "pseries") && !addrs->dryRun) {
+        if (qemuDomainPCIReassignHostdevAddress(def, qemuCaps)) {
+            goto error;
+        }
     }
 
     /* VirtIO balloon */

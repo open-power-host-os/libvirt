@@ -231,6 +231,9 @@ virDomainDefPtr qemuParseCommandLinePid(virCapsPtr qemuCaps,
                                         virDomainChrSourceDefPtr *monConfig,
                                         bool *monJSON);
 
+int qemuDomainPCIReassignHostdevAddress(virDomainDefPtr def,
+                                       virQEMUCapsPtr qemuCaps);
+
 int qemuDomainAssignAddresses(virDomainDefPtr def,
                               virQEMUCapsPtr qemuCaps,
                               virDomainObjPtr obj)
