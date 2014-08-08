@@ -2256,6 +2256,14 @@ int qemuDomainPCIReassignHostdevAddress(virDomainDefPtr def,
                         if (!subfunchostdev) {
                             continue;
                         }
+                        if ((subfunchostdev->source.subsys.u.pci.addr.domain !=
+ hostdev->source.subsys.u.pci.addr.domain) ||
+ (subfunchostdev->source.subsys.u.pci.addr.bus !=
+ hostdev->source.subsys.u.pci.addr.bus) ||
+ (subfunchostdev->source.subsys.u.pci.addr.slot !=
+ hostdev->source.subsys.u.pci.addr.slot)) {
+                            continue;
+                        }
                         hostdev->info->addr.pci.multi =
                             VIR_DEVICE_ADDRESS_PCI_MULTI_ON;
                         subfunchostdev->info->addr.pci.domain = hostdev->info->addr.pci.domain;
