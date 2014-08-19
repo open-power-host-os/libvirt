@@ -1422,7 +1422,8 @@ static qemuMonitorCallbacks monitorCallbacks = {
 };
 
 static int
-qemuConnectMonitor(virQEMUDriverPtr driver, virDomainObjPtr vm, int logfd)
+qemuConnectMonitor(virQEMUDriverPtr driver, virDomainObjPtr vm, int asyncJob,
+                   int logfd)
 {
     qemuDomainObjPrivatePtr priv = vm->privateData;
     int ret = -1;
@@ -1473,7 +1474,8 @@ qemuConnectMonitor(virQEMUDriverPtr driver, virDomainObjPtr vm, int logfd)
     }
 
 
-    qemuDomainObjEnterMonitor(driver, vm);
+    if (qemuDomainObjEnterMonitorAsync(driver, vm, asyncJob) < 0)
+        goto error;
     ret = qemuMonitorSetCapabilities(priv->mon);
     if (ret == 0 &&
         virQEMUCapsGet(priv->qemuCaps, QEMU_CAPS_MONITOR_JSON))
@@ -1879,6 +1881,7 @@ qemuProcessFindCharDevicePTYs(virDomainObjPtr vm,
 static int
 qemuProcessWaitForMonitor(virQEMUDriverPtr driver,
                           virDomainObjPtr vm,
+                          int asyncJob,
                           virQEMUCapsPtr qemuCaps,
                           off_t pos)
 {
@@ -1904,7 +1907,7 @@ qemuProcessWaitForMonitor(virQEMUDriverPtr driver,
     }
 
     VIR_DEBUG("Connect monitor to %p '%s'", vm, vm->def->name);
-    if (qemuConnectMonitor(driver, vm, logfd) < 0)
+    if (qemuConnectMonitor(driver, vm, asyncJob, logfd) < 0)
         goto cleanup;
 
     /* Try to get the pty path mappings again via the monitor. This is much more
@@ -1916,7 +1919,8 @@ qemuProcessWaitForMonitor(virQEMUDriverPtr driver,
         goto cleanup;
 
     priv = vm->privateData;
-    qemuDomainObjEnterMonitor(driver, vm);
+    if (qemuDomainObjEnterMonitorAsync(driver, vm, asyncJob) < 0)
+        goto cleanup;
     ret = qemuMonitorGetPtyPaths(priv->mon, paths);
     qemuDomainObjExitMonitor(driver, vm);
 
@@ -1962,13 +1966,14 @@ qemuProcessWaitForMonitor(virQEMUDriverPtr driver,
 
 static int
 qemuProcessDetectVcpuPIDs(virQEMUDriverPtr driver,
-                          virDomainObjPtr vm)
+                          virDomainObjPtr vm, int asyncJob)
 {
     pid_t *cpupids = NULL;
     int ncpupids;
     qemuDomainObjPrivatePtr priv = vm->privateData;
 
-    qemuDomainObjEnterMonitor(driver, vm);
+    if (qemuDomainObjEnterMonitorAsync(driver, vm, asyncJob) < 0)
+        return -1;
     /* failure to get the VCPU<-> PID mapping or to execute the query
      * command will not be treated fatal as some versions of qemu don't
      * support this command */
@@ -2191,7 +2196,8 @@ qemuProcessSetEmulatorAffinities(virConnectPtr conn ATTRIBUTE_UNUSED,
 static int
 qemuProcessInitPasswords(virConnectPtr conn,
                          virQEMUDriverPtr driver,
-                         virDomainObjPtr vm)
+                         virDomainObjPtr vm,
+                         int asyncJob)
 {
     int ret = 0;
     qemuDomainObjPrivatePtr priv = vm->privateData;
@@ -2204,12 +2210,14 @@ qemuProcessInitPasswords(virConnectPtr conn,
             ret = qemuDomainChangeGraphicsPasswords(driver, vm,
                                                     VIR_DOMAIN_GRAPHICS_TYPE_VNC,
                                                     &graphics->data.vnc.auth,
-                                                    cfg->vncPassword);
+                                                    cfg->vncPassword,
+                                                    asyncJob);
         } else if (graphics->type == VIR_DOMAIN_GRAPHICS_TYPE_SPICE) {
             ret = qemuDomainChangeGraphicsPasswords(driver, vm,
                                                     VIR_DOMAIN_GRAPHICS_TYPE_SPICE,
                                                     &graphics->data.spice.auth,
-                                                    cfg->spicePassword);
+                                                    cfg->spicePassword,
+                                                    asyncJob);
         }
 
         if (ret < 0)
@@ -2232,7 +2240,8 @@ qemuProcessInitPasswords(virConnectPtr conn,
                 goto cleanup;
 
             alias = vm->def->disks[i]->info.alias;
-            qemuDomainObjEnterMonitor(driver, vm);
+            if (qemuDomainObjEnterMonitorAsync(driver, vm, asyncJob) < 0)
+                goto cleanup;
             ret = qemuMonitorSetDrivePassphrase(priv->mon, alias, secret);
             VIR_FREE(secret);
             qemuDomainObjExitMonitor(driver, vm);
@@ -2616,14 +2625,16 @@ qemuProcessDetectPCIAddresses(virDomainObjPtr vm,
 
 static int
 qemuProcessInitPCIAddresses(virQEMUDriverPtr driver,
-                            virDomainObjPtr vm)
+                            virDomainObjPtr vm,
+                            int asyncJob)
 {
     qemuDomainObjPrivatePtr priv = vm->privateData;
     int naddrs;
     int ret;
     qemuMonitorPCIAddress *addrs = NULL;
 
-    qemuDomainObjEnterMonitor(driver, vm);
+    if (qemuDomainObjEnterMonitorAsync(driver, vm, asyncJob) < 0)
+        return -1;
     naddrs = qemuMonitorGetAllPCIAddresses(priv->mon,
                                            &addrs);
     qemuDomainObjExitMonitor(driver, vm);
@@ -3128,7 +3139,7 @@ qemuProcessUpdateDevices(virQEMUDriverPtr driver,
 
     old = priv->qemuDevices;
     priv->qemuDevices = NULL;
-    if (qemuDomainUpdateDeviceList(driver, vm) < 0)
+    if (qemuDomainUpdateDeviceList(driver, vm, QEMU_ASYNC_JOB_NONE) < 0)
         goto cleanup;
 
     if ((tmp = old)) {
@@ -3194,7 +3205,7 @@ qemuProcessReconnect(void *opaque)
     virObjectRef(obj);
 
     /* XXX check PID liveliness & EXE path */
-    if (qemuConnectMonitor(driver, obj, -1) < 0)
+    if (qemuConnectMonitor(driver, obj, QEMU_ASYNC_JOB_NONE, -1) < 0)
         goto error;
 
     /* Failure to connect to agent shouldn't be fatal */
@@ -3582,7 +3593,9 @@ qemuValidateCpuMax(virDomainDefPtr def, virQEMUCapsPtr qemuCaps)
 
 
 static bool
-qemuProcessVerifyGuestCPU(virQEMUDriverPtr driver, virDomainObjPtr vm)
+qemuProcessVerifyGuestCPU(virQEMUDriverPtr driver,
+                          virDomainObjPtr vm,
+                          int asyncJob)
 {
     virDomainDefPtr def = vm->def;
     virArch arch = def->os.arch;
@@ -3594,7 +3607,8 @@ qemuProcessVerifyGuestCPU(virQEMUDriverPtr driver, virDomainObjPtr vm)
     switch (arch) {
     case VIR_ARCH_I686:
     case VIR_ARCH_X86_64:
-        qemuDomainObjEnterMonitor(driver, vm);
+        if (qemuDomainObjEnterMonitorAsync(driver, vm, asyncJob) < 0)
+            return false;
         rc = qemuMonitorGetGuestCPU(priv->mon, arch, &guestcpu);
         qemuDomainObjExitMonitor(driver, vm);
 
@@ -3629,6 +3643,7 @@ qemuProcessVerifyGuestCPU(virQEMUDriverPtr driver, virDomainObjPtr vm)
 int qemuProcessStart(virConnectPtr conn,
                      virQEMUDriverPtr driver,
                      virDomainObjPtr vm,
+                     int asyncJob,
                      const char *migrateFrom,
                      int stdin_fd,
                      const char *stdin_path,
@@ -4080,7 +4095,7 @@ int qemuProcessStart(virConnectPtr conn,
         goto cleanup;
 
     VIR_DEBUG("Waiting for monitor to show up");
-    if (qemuProcessWaitForMonitor(driver, vm, priv->qemuCaps, pos) < 0)
+    if (qemuProcessWaitForMonitor(driver, vm, asyncJob, priv->qemuCaps, pos) < 0)
         goto cleanup;
 
     /* Failure to connect to agent shouldn't be fatal */
@@ -4095,11 +4110,11 @@ int qemuProcessStart(virConnectPtr conn,
     }
 
     VIR_DEBUG("Detecting if required emulator features are present");
-    if (!qemuProcessVerifyGuestCPU(driver, vm))
+    if (!qemuProcessVerifyGuestCPU(driver, vm, asyncJob))
         goto cleanup;
 
     VIR_DEBUG("Detecting VCPU PIDs");
-    if (qemuProcessDetectVcpuPIDs(driver, vm) < 0)
+    if (qemuProcessDetectVcpuPIDs(driver, vm, asyncJob) < 0)
         goto cleanup;
 
     VIR_DEBUG("Setting cgroup for each VCPU (if required)");
@@ -4119,14 +4134,14 @@ int qemuProcessStart(virConnectPtr conn,
         goto cleanup;
 
     VIR_DEBUG("Setting any required VM passwords");
-    if (qemuProcessInitPasswords(conn, driver, vm) < 0)
+    if (qemuProcessInitPasswords(conn, driver, vm, asyncJob) < 0)
         goto cleanup;
 
     /* If we have -device, then addresses are assigned explicitly.
      * If not, then we have to detect dynamic ones here */
     if (!virQEMUCapsGet(priv->qemuCaps, QEMU_CAPS_DEVICE)) {
         VIR_DEBUG("Determining domain device PCI addresses");
-        if (qemuProcessInitPCIAddresses(driver, vm) < 0)
+        if (qemuProcessInitPCIAddresses(driver, vm, asyncJob) < 0)
             goto cleanup;
     }
 
@@ -4134,7 +4149,8 @@ int qemuProcessStart(virConnectPtr conn,
     /* qemu doesn't support setting this on the command line, so
      * enter the monitor */
     VIR_DEBUG("Setting network link states");
-    qemuDomainObjEnterMonitor(driver, vm);
+    if (qemuDomainObjEnterMonitorAsync(driver, vm, asyncJob) < 0)
+        goto cleanup;
     if (qemuProcessSetLinkStates(vm) < 0) {
         qemuDomainObjExitMonitor(driver, vm);
         goto cleanup;
@@ -4143,7 +4159,7 @@ int qemuProcessStart(virConnectPtr conn,
     qemuDomainObjExitMonitor(driver, vm);
 
     VIR_DEBUG("Fetching list of active devices");
-    if (qemuDomainUpdateDeviceList(driver, vm) < 0)
+    if (qemuDomainUpdateDeviceList(driver, vm, asyncJob) < 0)
         goto cleanup;
 
     /* Technically, qemuProcessStart can be called from inside
@@ -4158,7 +4174,8 @@ int qemuProcessStart(virConnectPtr conn,
                        vm->def->mem.cur_balloon);
         goto cleanup;
     }
-    qemuDomainObjEnterMonitor(driver, vm);
+    if (qemuDomainObjEnterMonitorAsync(driver, vm, asyncJob) < 0)
+        goto cleanup;
     if (vm->def->memballoon && vm->def->memballoon->period)
         qemuMonitorSetMemoryStatsPeriod(priv->mon, vm->def->memballoon->period);
     if (qemuMonitorSetBalloon(priv->mon, cur_balloon) < 0) {
@@ -4682,7 +4699,7 @@ int qemuProcessAttach(virConnectPtr conn ATTRIBUTE_UNUSED,
     vm->pid = pid;
 
     VIR_DEBUG("Waiting for monitor to show up");
-    if (qemuProcessWaitForMonitor(driver, vm, priv->qemuCaps, -1) < 0)
+    if (qemuProcessWaitForMonitor(driver, vm, QEMU_ASYNC_JOB_NONE, priv->qemuCaps, -1) < 0)
         goto error;
 
     /* Failure to connect to agent shouldn't be fatal */
@@ -4697,14 +4714,14 @@ int qemuProcessAttach(virConnectPtr conn ATTRIBUTE_UNUSED,
     }
 
     VIR_DEBUG("Detecting VCPU PIDs");
-    if (qemuProcessDetectVcpuPIDs(driver, vm) < 0)
+    if (qemuProcessDetectVcpuPIDs(driver, vm, QEMU_ASYNC_JOB_NONE) < 0)
         goto error;
 
     /* If we have -device, then addresses are assigned explicitly.
      * If not, then we have to detect dynamic ones here */
     if (!virQEMUCapsGet(priv->qemuCaps, QEMU_CAPS_DEVICE)) {
         VIR_DEBUG("Determining domain device PCI addresses");
-        if (qemuProcessInitPCIAddresses(driver, vm) < 0)
+        if (qemuProcessInitPCIAddresses(driver, vm, QEMU_ASYNC_JOB_NONE) < 0)
             goto error;
     }
 
