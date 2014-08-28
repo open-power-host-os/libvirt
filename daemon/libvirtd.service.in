@@ -22,6 +22,7 @@ KillMode=process
 Restart=on-failure
 # Override the maximum number of opened files
 #LimitNOFILE=2048
+LimitMEMLOCK=134217728
 
 [Install]
 WantedBy=multi-user.target
