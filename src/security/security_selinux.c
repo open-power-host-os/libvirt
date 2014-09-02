@@ -743,7 +743,8 @@ virSecuritySELinuxReserveSecurityLabel(virSecurityManagerPtr mgr,
         return -1;
     }
 
-    if (seclabel->type == VIR_DOMAIN_SECLABEL_STATIC)
+    if (seclabel->type == VIR_DOMAIN_SECLABEL_STATIC ||
+        seclabel->type == VIR_DOMAIN_SECLABEL_NONE)
         return 0;
 
     if (getpidcon_raw(pid, &pctx) == -1) {
