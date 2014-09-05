@@ -1,12 +1,9 @@
 <domain type='qemu'>
   <name>QEMUGuest1</name>
   <uuid>c7a5fdbd-edaf-9455-926a-d65c16db1809</uuid>
-  <memory unit='KiB'>262144</memory>
-  <currentMemory unit='KiB'>262144</currentMemory>
-  <memoryBacking>
-    <hugepages/>
-  </memoryBacking>
-  <vcpu placement='static'>1</vcpu>
+  <memory unit='KiB'>219100</memory>
+  <currentMemory unit='KiB'>219100</currentMemory>
+  <vcpu placement='static' cpuset='1-4,8-20,525'>1</vcpu>
   <os>
     <type arch='i686' machine='pc'>hvm</type>
     <boot dev='hd'/>
@@ -27,4 +24,5 @@
     <controller type='pci' index='0' model='pci-root'/>
     <memballoon model='virtio'/>
   </devices>
+  <seclabel type='none' model='none'/>
 </domain>

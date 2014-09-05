@@ -67,6 +67,8 @@ VIR_LOG_INIT("qemu.qemu_command");
 #define VIO_ADDR_SCSI 0x2000ul
 #define VIO_ADDR_SERIAL 0x30000000ul
 #define VIO_ADDR_NVRAM 0x3000ul
+#define MEMINFO "/proc/meminfo"
+#define MEMINFO_FILE_LEN 10*1024
 
 VIR_ENUM_DECL(virDomainDiskQEMUBus)
 VIR_ENUM_IMPL(virDomainDiskQEMUBus, VIR_DOMAIN_DISK_BUS_LAST,
@@ -149,6 +151,45 @@ VIR_ENUM_IMPL(qemuDomainFSDriver, VIR_DOMAIN_FS_DRIVER_TYPE_LAST,
               NULL,
               NULL);
 
+static int virGetHugepageSize(void)
+{
+    char *outbuf = NULL;
+    const char *cur = NULL;
+    char *eol = NULL;
+    unsigned int hugepage_size = 0;
+
+    if (virFileReadAll(MEMINFO, MEMINFO_FILE_LEN, &outbuf) < 0) {
+        virReportError(VIR_ERR_INTERNAL_ERROR,
+                       _("Failed to open %s"), MEMINFO);
+        return -1;
+    }
+
+    if ((cur = strstr(outbuf, "Hugepagesize")) == NULL) {
+        virReportError(VIR_ERR_INTERNAL_ERROR, "%s",
+                       _("Hugepages not available : possibly not mounted ?"));
+        VIR_FREE(outbuf);
+        return -1;
+    }
+
+    cur = strchr(cur, ':') + 1;
+
+    /* Hugepage listing in /proc/meminfo goes in KBs, like this:
+     * Hugepagesize:       2048 kB
+     * Parse based on this assumption.
+     * This will need a change if kernel-published format changes
+     */
+    eol = strstr(cur, "kB\n");
+    virSkipSpaces(&cur);
+
+    if (virStrToLong_ui(cur, &eol, 10, &hugepage_size) < 0) {
+        virReportError(VIR_ERR_INTERNAL_ERROR, "%s",
+                       _("Unable to get Hugepage size"));
+        VIR_FREE(outbuf);
+        return -1;
+    }
+
+    return hugepage_size * 1024;
+}
 
 /**
  * qemuPhysIfaceConnect:
@@ -208,6 +249,35 @@ qemuPhysIfaceConnect(virDomainDefPtr def,
     VIR_FREE(res_ifname);
     virObjectUnref(cfg);
     return -1;
+}
+
+char *
+qemuGetSPAPRVFIOHostDevContAliasString(virDomainDefPtr def, virDomainDeviceInfoPtr info)
+{
+    size_t i;
+    int iommu;
+    virBuffer buf = VIR_BUFFER_INITIALIZER;
+
+    for (i = 0; i < def->nhostdevs; i++) {
+        virDomainHostdevDefPtr hostdev = def->hostdevs[i];
+        if (hostdev->mode == VIR_DOMAIN_HOSTDEV_MODE_SUBSYS &&
+            hostdev->source.subsys.type == VIR_DOMAIN_HOSTDEV_SUBSYS_TYPE_PCI &&
+            hostdev->source.subsys.u.pci.backend ==
+            VIR_DOMAIN_HOSTDEV_PCI_BACKEND_VFIO) {
+            if (STREQ(info->alias, hostdev->info->alias)) {
+                virPCIDeviceAddressPtr addr;
+                addr = (virPCIDeviceAddressPtr)&hostdev->source.subsys.u.pci.addr;
+                if ((iommu = virPCIDeviceAddressGetIOMMUGroupNum(addr)) < 0)
+                    goto error;
+                virBufferAsprintf(&buf, "VFIOBUS%d.%d", iommu, 0);
+            }
+        }
+    }
+    return virBufferContentAndReset(&buf);
+ error:
+    virBufferFreeAndReset(&buf);
+    return NULL;
+
 }
 
 
@@ -719,7 +789,7 @@ qemuSetSCSIControllerModel(virDomainDefPtr def,
         }
     } else {
         if ((def->os.arch == VIR_ARCH_PPC64) &&
-            STREQ(def->os.machine, "pseries")) {
+            STRPREFIX(def->os.machine, "pseries")) {
             *model = VIR_DOMAIN_CONTROLLER_MODEL_SCSI_IBMVSCSI;
         } else if (virQEMUCapsGet(qemuCaps, QEMU_CAPS_SCSI_LSI)) {
             *model = VIR_DOMAIN_CONTROLLER_MODEL_SCSI_LSILOGIC;
@@ -1421,7 +1491,7 @@ int qemuDomainAssignSpaprVIOAddresses(virDomainDefPtr def,
     for (i = 0; i < def->nserials; i++) {
         if (def->serials[i]->deviceType == VIR_DOMAIN_CHR_DEVICE_TYPE_SERIAL &&
             (def->os.arch == VIR_ARCH_PPC64) &&
-            STREQ(def->os.machine, "pseries"))
+            STRPREFIX(def->os.machine, "pseries"))
             def->serials[i]->info.type = VIR_DOMAIN_DEVICE_ADDRESS_TYPE_SPAPRVIO;
         if (qemuAssignSpaprVIOAddress(def, &def->serials[i]->info,
                                       VIO_ADDR_SERIAL) < 0)
@@ -1430,7 +1500,7 @@ int qemuDomainAssignSpaprVIOAddresses(virDomainDefPtr def,
 
     if (def->nvram) {
         if (def->os.arch == VIR_ARCH_PPC64 &&
-            STREQ(def->os.machine, "pseries"))
+            STRPREFIX(def->os.machine, "pseries"))
             def->nvram->info.type = VIR_DOMAIN_DEVICE_ADDRESS_TYPE_SPAPRVIO;
         if (qemuAssignSpaprVIOAddress(def, &def->nvram->info,
                                       VIO_ADDR_NVRAM) < 0)
@@ -2119,6 +2189,98 @@ qemuDomainValidateDevicePCISlotsQ35(virDomainDefPtr def,
     return ret;
 }
 
+static
+virDomainHostdevDefPtr qemuDomainDefGetHostdevByPCIAddress(virDomainDefPtr def, virDevicePCIAddressPtr devaddr)
+{
+    size_t i;
+    virDomainHostdevDefPtr ret = NULL;
+
+    for (i = 0; i < def->nhostdevs; i++) {
+        virDomainHostdevDefPtr hostdev = def->hostdevs[i];
+        if (hostdev->mode == VIR_DOMAIN_HOSTDEV_MODE_SUBSYS &&
+            hostdev->source.subsys.type == VIR_DOMAIN_HOSTDEV_SUBSYS_TYPE_PCI) {
+            int backend = hostdev->source.subsys.u.pci.backend;
+
+            if (backend == VIR_DOMAIN_HOSTDEV_PCI_BACKEND_VFIO) {
+                if (virDevicePCIAddressEqual(devaddr, &hostdev->source.subsys.u.pci.addr)) {
+                    ret = hostdev;
+                    break;
+                }
+            }
+        }
+    }
+    return ret;
+}
+
+int qemuDomainPCIReassignHostdevAddress(virDomainDefPtr def,
+                                       virQEMUCapsPtr qemuCaps)
+{
+    size_t i, j;
+    virPCIDevicePtr curpcidev = NULL;
+
+    for (i = 0; i < def->nhostdevs; i++) {
+        virDomainHostdevDefPtr hostdev = def->hostdevs[i];
+        curpcidev = NULL;
+        if (hostdev->mode == VIR_DOMAIN_HOSTDEV_MODE_SUBSYS &&
+            hostdev->source.subsys.type == VIR_DOMAIN_HOSTDEV_SUBSYS_TYPE_PCI) {
+            int backend = hostdev->source.subsys.u.pci.backend;
+
+            if (backend == VIR_DOMAIN_HOSTDEV_PCI_BACKEND_VFIO) {
+                virPCIDeviceAddressPtr curhostdevpciaddr = (virPCIDeviceAddressPtr)&hostdev->source.subsys.u.pci.addr;
+
+                if (!virQEMUCapsGet(qemuCaps, QEMU_CAPS_DEVICE_VFIO_PCI)) {
+                    continue;
+                }
+
+                if (curhostdevpciaddr->function == 0) {
+                    curpcidev =  virPCIDeviceNew(curhostdevpciaddr->domain,
+                                                 curhostdevpciaddr->bus,
+                                                 curhostdevpciaddr->slot,
+                                                 curhostdevpciaddr->function);
+                    if (!curpcidev)
+                        goto error;
+                    virPCIDeviceListPtr devList = virPCIDeviceGetIOMMUGroupList(curpcidev);
+                    for (j = 0; j < devList->count; j++) {
+                        virDevicePCIAddress devaddr;
+                        virDomainHostdevDefPtr subfunchostdev = NULL;
+
+                        devaddr.function = devList->devs[j]->function;
+                        devaddr.domain = devList->devs[j]->domain;
+                        devaddr.slot = devList->devs[j]->slot;
+                        devaddr.bus = devList->devs[j]->bus;
+
+                        if (devaddr.function == 0) {
+                            continue;
+                        }
+                        subfunchostdev = qemuDomainDefGetHostdevByPCIAddress(def, &devaddr);
+                        if (!subfunchostdev) {
+                            continue;
+                        }
+                        if ((subfunchostdev->source.subsys.u.pci.addr.domain !=
+ hostdev->source.subsys.u.pci.addr.domain) ||
+ (subfunchostdev->source.subsys.u.pci.addr.bus !=
+ hostdev->source.subsys.u.pci.addr.bus) ||
+ (subfunchostdev->source.subsys.u.pci.addr.slot !=
+ hostdev->source.subsys.u.pci.addr.slot)) {
+                            continue;
+                        }
+                        hostdev->info->addr.pci.multi =
+                            VIR_DEVICE_ADDRESS_PCI_MULTI_ON;
+                        subfunchostdev->info->addr.pci.domain = hostdev->info->addr.pci.domain;
+                        subfunchostdev->info->addr.pci.bus = hostdev->info->addr.pci.bus;
+                        subfunchostdev->info->addr.pci.slot = hostdev->info->addr.pci.slot;
+                        subfunchostdev->info->addr.pci.function = devaddr.function;
+                    }
+                    virPCIDeviceFree(curpcidev);
+                    virObjectUnref(devList);
+                }
+            }
+        }
+    }
+    return 0;
+ error:
+    return -1;
+}
 
 /*
  * This assigns static PCI slots to all configured devices.
@@ -2373,6 +2535,13 @@ qemuAssignDevicePCISlots(virDomainDefPtr def,
             goto error;
     }
 
+    if ((def->os.arch == VIR_ARCH_PPC64) && def->os.machine &&
+        STRPREFIX(def->os.machine, "pseries") && !addrs->dryRun) {
+        if (qemuDomainPCIReassignHostdevAddress(def, qemuCaps)) {
+            goto error;
+        }
+    }
+
     /* VirtIO balloon */
     if (def->memballoon &&
         def->memballoon->model == VIR_DOMAIN_MEMBALLOON_MODEL_VIRTIO &&
@@ -2517,7 +2686,21 @@ qemuBuildDeviceAddressStr(virBufferPtr buf,
          * PCI_MULTIBUS capability indicates that the implicit
          * PCI bus is named 'pci.0' instead of 'pci'.
          */
-        if (info->addr.pci.bus != 0) {
+
+        if (virQEMUCapsGet(qemuCaps, QEMU_CAPS_SPAPR_VFIO_BRIDGE) && STREQLEN(info->alias, "hostdev", strlen("hostdev")))
+        {
+            contAlias = qemuGetSPAPRVFIOHostDevContAliasString(domainDef, info);
+            if (!contAlias) {
+                    virReportError(VIR_ERR_INTERNAL_ERROR,
+                                   _("Device alias was not set for PCI "
+                                     "controller with index %u required "
+                                     "for device at address %s"),
+                                   info->addr.pci.bus, devStr);
+                    goto cleanup;
+            }
+            virBufferAsprintf(buf, ",bus=%s", contAlias);
+            VIR_FREE(contAlias);
+        } else if (info->addr.pci.bus != 0) {
             if (virQEMUCapsGet(qemuCaps, QEMU_CAPS_DEVICE_PCI_BRIDGE)) {
                 virBufferAsprintf(buf, ",bus=%s", contAlias);
             } else {
@@ -4971,33 +5154,62 @@ qemuOpenPCIConfig(virDomainHostdevDefPtr dev)
     return configfd;
 }
 
-char *
-qemuBuildSPAPRVFIODevStr(virDomainHostdevDefPtr dev,
-                         virQEMUCapsPtr qemuCaps)
+int
+qemuBuildSPAPRVFIODeviceCommandLine(virCommandPtr cmd, virDomainDefPtr def, virQEMUCapsPtr qemuCaps)
 {
-    int iommuGroup;
-    virPCIDeviceAddressPtr addr;
-    virBuffer buf = VIR_BUFFER_INITIALIZER;
+    size_t i, j, nIommuGroupCount = 0;
+    int *iommuGroupNums = NULL;
+    int ret = -1;
 
-    addr = (virPCIDeviceAddressPtr)&dev->source.subsys.u.pci.addr;
-    if ((iommuGroup = virPCIDeviceAddressGetIOMMUGroupNum(addr)) < 0)
-        goto cleanup;
-    if (!virQEMUCapsGet(qemuCaps, QEMU_CAPS_SPAPR_VFIO_BRIDGE)) {
-        virReportError(VIR_ERR_CONFIG_UNSUPPORTED, "%s",
-                       _("SPAPR_VFIO_BRIDGE is not supported by QEMU"));
-        goto cleanup;
+    if (!virQEMUCapsGet(qemuCaps, QEMU_CAPS_SPAPR_VFIO_BRIDGE))
+       return 0;
+
+    for (i = 0; i < def->nhostdevs; i++) {
+        virDomainHostdevDefPtr hostdev = def->hostdevs[i];
+        if (hostdev->mode == VIR_DOMAIN_HOSTDEV_MODE_SUBSYS &&
+            hostdev->source.subsys.type == VIR_DOMAIN_HOSTDEV_SUBSYS_TYPE_PCI &&
+            hostdev->source.subsys.u.pci.backend ==
+            VIR_DOMAIN_HOSTDEV_PCI_BACKEND_VFIO) {
+            int iommu = -1;
+            virPCIDeviceAddressPtr addr;
+
+            addr = (virPCIDeviceAddressPtr)&hostdev->source.subsys.u.pci.addr;
+            if ((iommu = virPCIDeviceAddressGetIOMMUGroupNum(addr)) < 0)
+                goto error;
+
+            for (j = 0; j < nIommuGroupCount; j++) {
+                if (iommuGroupNums[j] == iommu) {
+                    iommu = -1;
+                    break;
+                }
+            }
+            if (iommu != -1) {
+                if (VIR_REALLOC_N(iommuGroupNums, nIommuGroupCount+1) < 0)
+                    goto error;
+                iommuGroupNums[nIommuGroupCount++] = iommu;
+            }
+        }
     }
 
-    virBufferAddLit(&buf, "spapr-pci-vfio-host-bridge");
-    virBufferAsprintf(&buf, ",iommu=%d", iommuGroup);
-    virBufferAsprintf(&buf, ",id=VFIOBUS%d", iommuGroup);
-    virBufferAsprintf(&buf, ",index=%d", iommuGroup + 1);
+    if (nIommuGroupCount) {
+       for (i = 0; i < nIommuGroupCount; i++) {
+          char *devstr;
+          virCommandAddArg(cmd, "-device");
+          ignore_value(virAsprintf(&devstr,
+                                   "spapr-pci-vfio-host-bridge,iommu=%d,id=VFIOBUS%d,index=%d",
+                                   iommuGroupNums[i], iommuGroupNums[i],
+                                   iommuGroupNums[i] + 1));
+          if (!devstr)
+              goto error;
+          virCommandAddArg(cmd, devstr);
+          VIR_FREE(devstr);
+       }
+    }
 
-    return virBufferContentAndReset(&buf);
-
- cleanup:
-    virBufferFreeAndReset(&buf);
-    return NULL;
+    ret = 0;
+ error:
+    VIR_FREE(iommuGroupNums);
+    return ret;
 }
 
 char *
@@ -7269,6 +7481,7 @@ qemuBuildCommandLine(virConnectPtr conn,
     int actualSerials = 0;
     bool usblegacy = false;
     bool mlock = false;
+    int hugepage_size;
     int contOrder[] = {
         /* We don't add an explicit IDE or FD controller because the
          * provided PIIX4 device already includes one. It isn't possible to
@@ -7409,6 +7622,19 @@ qemuBuildCommandLine(virConnectPtr conn,
             virReportError(VIR_ERR_INTERNAL_ERROR,
                            _("hugepage backing not supported by '%s'"),
                            def->emulator);
+            goto error;
+        }
+
+        hugepage_size = virGetHugepageSize();
+        if (hugepage_size < 0) {
+            virReportError(VIR_ERR_INTERNAL_ERROR, "%s",
+                           _("Unable to obtain hugepage size"));
+            goto error;
+
+        }
+        if ((def->mem.max_balloon * 1024) % hugepage_size) {
+            virReportError(VIR_ERR_INTERNAL_ERROR, "%s",
+                   _("Given memory should be a multiple of hugepage size"));
             goto error;
         }
         virCommandAddArgList(cmd, "-mem-prealloc", "-mem-path",
@@ -8941,6 +9167,12 @@ qemuBuildCommandLine(virConnectPtr conn,
     }
 
     /* Add host passthrough hardware */
+    if (def->os.arch == VIR_ARCH_PPC64 && STRPREFIX(def->os.machine, "pseries")) {
+       if (qemuBuildSPAPRVFIODeviceCommandLine(cmd, def, qemuCaps) < 0) {
+               goto error;
+       }
+    }
+
     for (i = 0; i < def->nhostdevs; i++) {
         virDomainHostdevDefPtr hostdev = def->hostdevs[i];
         char *devstr;
@@ -9028,17 +9260,6 @@ qemuBuildCommandLine(virConnectPtr conn,
 
             if (virQEMUCapsGet(qemuCaps, QEMU_CAPS_DEVICE)) {
                 char *configfd_name = NULL;
-                if (virQEMUCapsGet(qemuCaps, QEMU_CAPS_SPAPR_VFIO_BRIDGE) &&
-                    hostdev->source.subsys.u.pci.backend ==
-                    VIR_DOMAIN_HOSTDEV_PCI_BACKEND_VFIO &&
-                    def->os.arch == VIR_ARCH_PPC64) {
-                    virCommandAddArg(cmd, "-device");
-                    devstr = qemuBuildSPAPRVFIODevStr(hostdev, qemuCaps);
-                    if (!devstr)
-                        goto error;
-                    virCommandAddArg(cmd, devstr);
-                    VIR_FREE(devstr);
-                }
                 if ((backend != VIR_DOMAIN_HOSTDEV_PCI_BACKEND_VFIO) &&
                     virQEMUCapsGet(qemuCaps, QEMU_CAPS_PCI_CONFIGFD)) {
                     int configfd = qemuOpenPCIConfig(hostdev);
@@ -9205,7 +9426,7 @@ qemuBuildCommandLine(virConnectPtr conn,
 
     if (def->nvram) {
         if (def->os.arch == VIR_ARCH_PPC64 &&
-            STREQ(def->os.machine, "pseries")) {
+            STRPREFIX(def->os.machine, "pseries")) {
             if (!virQEMUCapsGet(qemuCaps, QEMU_CAPS_DEVICE_NVRAM)) {
                 virReportError(VIR_ERR_CONFIG_UNSUPPORTED, "%s",
                                _("nvram device is not supported by "
@@ -9316,7 +9537,7 @@ qemuBuildSerialChrDeviceStr(char **deviceStr,
 {
     virBuffer cmd = VIR_BUFFER_INITIALIZER;
 
-    if ((arch == VIR_ARCH_PPC64) && STREQ(machine, "pseries")) {
+    if ((arch == VIR_ARCH_PPC64) && STRPREFIX(machine, "pseries")) {
         if (serial->deviceType == VIR_DOMAIN_CHR_DEVICE_TYPE_SERIAL &&
             serial->info.type == VIR_DOMAIN_DEVICE_ADDRESS_TYPE_SPAPRVIO) {
             virBufferAsprintf(&cmd, "spapr-vty,chardev=char%s",
@@ -9744,7 +9965,7 @@ qemuParseCommandLineDisk(virDomainXMLOptionPtr xmlopt,
         goto cleanup;
 
     if (((dom->os.arch == VIR_ARCH_PPC64) &&
-        dom->os.machine && STREQ(dom->os.machine, "pseries")))
+        dom->os.machine && STRPREFIX(dom->os.machine, "pseries")))
         def->bus = VIR_DOMAIN_DISK_BUS_SCSI;
     else
        def->bus = VIR_DOMAIN_DISK_BUS_IDE;
@@ -9836,7 +10057,7 @@ qemuParseCommandLineDisk(virDomainXMLOptionPtr xmlopt,
             if (STREQ(values[i], "ide")) {
                 def->bus = VIR_DOMAIN_DISK_BUS_IDE;
                 if (((dom->os.arch == VIR_ARCH_PPC64) &&
-                     dom->os.machine && STREQ(dom->os.machine, "pseries"))) {
+                     dom->os.machine && STRPREFIX(dom->os.machine, "pseries"))) {
                     virReportError(VIR_ERR_INTERNAL_ERROR,
                                    _("pseries systems do not support ide devices '%s'"), val);
                     goto error;
@@ -11070,7 +11291,7 @@ qemuParseCommandLine(virCapsPtr qemuCaps,
             if (STREQ(arg, "-cdrom")) {
                 disk->device = VIR_DOMAIN_DISK_DEVICE_CDROM;
                 if (((def->os.arch == VIR_ARCH_PPC64) &&
-                    def->os.machine && STREQ(def->os.machine, "pseries")))
+                    def->os.machine && STRPREFIX(def->os.machine, "pseries")))
                     disk->bus = VIR_DOMAIN_DISK_BUS_SCSI;
                 if (VIR_STRDUP(disk->dst, "hdc") < 0)
                     goto error;
@@ -11086,7 +11307,7 @@ qemuParseCommandLine(virCapsPtr qemuCaps,
                     else
                         disk->bus = VIR_DOMAIN_DISK_BUS_SCSI;
                    if (((def->os.arch == VIR_ARCH_PPC64) &&
-                       def->os.machine && STREQ(def->os.machine, "pseries")))
+                       def->os.machine && STRPREFIX(def->os.machine, "pseries")))
                        disk->bus = VIR_DOMAIN_DISK_BUS_SCSI;
                 }
                 if (VIR_STRDUP(disk->dst, arg + 1) < 0)

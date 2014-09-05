@@ -161,8 +161,12 @@ char * qemuBuildPCIHostdevDevStr(virDomainDefPtr def,
                                  const char *configfd,
                                  virQEMUCapsPtr qemuCaps);
 char *
-qemuBuildSPAPRVFIODevStr(virDomainHostdevDefPtr dev,
-                         virQEMUCapsPtr qemuCaps);
+qemuGetSPAPRVFIOHostDevContAliasString(virDomainDefPtr def,
+                                       virDomainDeviceInfoPtr info);
+
+int qemuBuildSPAPRVFIODeviceCommandLine(virCommandPtr cmd,
+                                        virDomainDefPtr def,
+                                        virQEMUCapsPtr qemuCaps);
 
 int qemuOpenPCIConfig(virDomainHostdevDefPtr dev);
 
@@ -226,6 +230,9 @@ virDomainDefPtr qemuParseCommandLinePid(virCapsPtr qemuCaps,
                                         char **pidfile,
                                         virDomainChrSourceDefPtr *monConfig,
                                         bool *monJSON);
+
+int qemuDomainPCIReassignHostdevAddress(virDomainDefPtr def,
+                                       virQEMUCapsPtr qemuCaps);
 
 int qemuDomainAssignAddresses(virDomainDefPtr def,
                               virQEMUCapsPtr qemuCaps,

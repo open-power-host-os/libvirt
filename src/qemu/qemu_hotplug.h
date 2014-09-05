@@ -60,7 +60,8 @@ int qemuDomainChangeGraphicsPasswords(virQEMUDriverPtr driver,
                                       virDomainObjPtr vm,
                                       int type,
                                       virDomainGraphicsAuthDefPtr auth,
-                                      const char *defaultPasswd);
+                                      const char *defaultPasswd,
+                                      int asyncJob);
 int qemuDomainChangeNet(virQEMUDriverPtr driver,
                         virDomainObjPtr vm,
                         virDomainPtr dom,

@@ -4602,8 +4602,23 @@ virSecurityLabelDefParseXML(xmlXPathContextPtr ctxt,
     /* For the model 'none' none of the following labels is going to be
      * present. Hence, return now. */
 
-    if (STREQ_NULLABLE(def->model, "none"))
+    if (STREQ_NULLABLE(def->model, "none")) {
+        if (flags & VIR_DOMAIN_XML_INACTIVE) {
+            /* Fix older configurations */
+            def->type = VIR_DOMAIN_SECLABEL_NONE;
+            def->norelabel = true;
+        } else {
+            if (def->type != VIR_DOMAIN_SECLABEL_NONE) {
+                virReportError(VIR_ERR_CONFIG_UNSUPPORTED,
+                               _("unsupported type='%s' to model 'none'"),
+                               virDomainSeclabelTypeToString(def->type));
+                goto error;
+            }
+            /* combination of relabel='yes' and type='static'
+             * is checked a few lines above. */
+        }
         return def;
+    }
 
     /* Only parse label, if using static labels, or
      * if the 'live' VM XML is requested
@@ -4656,7 +4671,7 @@ virSecurityLabelDefsParseXML(virDomainDefPtr def,
                             virCapsPtr caps,
                             unsigned int flags)
 {
-    size_t i = 0;
+    size_t i = 0, j;
     int n;
     xmlNodePtr *list = NULL, saved_node;
     virCapsHostPtr host = &caps->host;
@@ -4677,10 +4692,23 @@ virSecurityLabelDefsParseXML(virDomainDefPtr def,
 
     /* Parse each "seclabel" tag */
     for (i = 0; i < n; i++) {
+        virSecurityLabelDefPtr seclabel;
+
         ctxt->node = list[i];
-        def->seclabels[i] = virSecurityLabelDefParseXML(ctxt, flags);
-        if (def->seclabels[i] == NULL)
+        if (!(seclabel = virSecurityLabelDefParseXML(ctxt, flags)))
             goto error;
+
+        for (j = 0; j < i; j++) {
+            if (STREQ_NULLABLE(seclabel->model, def->seclabels[j]->model)) {
+                virReportError(VIR_ERR_XML_DETAIL,
+                               _("seclablel for model %s is already provided"),
+                               seclabel->model);
+                virSecurityLabelDefFree(seclabel);
+                goto error;
+            }
+        }
+
+        def->seclabels[i] = seclabel;
     }
     def->nseclabels = n;
     ctxt->node = saved_node;
@@ -14685,8 +14713,7 @@ virDomainEventActionDefFormat(virBufferPtr buf,
 
 static void
 virSecurityLabelDefFormat(virBufferPtr buf,
-                          virSecurityLabelDefPtr def,
-                          unsigned flags)
+                          virSecurityLabelDefPtr def)
 {
     const char *sectype = virDomainSeclabelTypeToString(def->type);
 
@@ -14696,19 +14723,17 @@ virSecurityLabelDefFormat(virBufferPtr buf,
     if (def->type == VIR_DOMAIN_SECLABEL_DEFAULT)
         return;
 
-    /* To avoid backward compatibility issues, suppress DAC labels that are
-     * automatically generated.
+    /* To avoid backward compatibility issues, suppress DAC and 'none' labels
+     * that are automatically generated.
      */
-    if (STREQ_NULLABLE(def->model, "dac") && def->implicit)
+    if ((STREQ_NULLABLE(def->model, "dac") ||
+         STREQ_NULLABLE(def->model, "none")) && def->implicit)
         return;
 
     virBufferAsprintf(buf, "<seclabel type='%s'",
                       sectype);
 
-    /* When generating state XML do include the model */
-    if (flags & VIR_DOMAIN_XML_INTERNAL_STATUS ||
-        STRNEQ_NULLABLE(def->model, "none"))
-        virBufferEscapeString(buf, " model='%s'", def->model);
+    virBufferEscapeString(buf, " model='%s'", def->model);
 
     if (def->type == VIR_DOMAIN_SECLABEL_NONE) {
         virBufferAddLit(buf, "/>\n");
@@ -17901,7 +17926,7 @@ virDomainDefFormatInternal(virDomainDefPtr def,
     virBufferAddLit(buf, "</devices>\n");
 
     for (n = 0; n < def->nseclabels; n++)
-        virSecurityLabelDefFormat(buf, def->seclabels[n], flags);
+        virSecurityLabelDefFormat(buf, def->seclabels[n]);
 
     if (def->namespaceData && def->ns.format) {
         if ((def->ns.format)(buf, def->namespaceData) < 0)

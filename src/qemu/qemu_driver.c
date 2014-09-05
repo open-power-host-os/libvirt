@@ -1618,7 +1618,8 @@ static virDomainPtr qemuDomainCreateXML(virConnectPtr conn,
         goto cleanup;
     }
 
-    if (qemuProcessStart(conn, driver, vm, NULL, -1, NULL, NULL,
+    if (qemuProcessStart(conn, driver, vm, QEMU_ASYNC_JOB_NONE,
+                         NULL, -1, NULL, NULL,
                          VIR_NETDEV_VPORT_PROFILE_OP_CREATE,
                          start_flags) < 0) {
         virDomainAuditStart(vm, "booted", false);
@@ -5399,7 +5400,8 @@ qemuDomainSaveImageStartVM(virConnectPtr conn,
     }
 
     /* Set the migration source and start it up. */
-    ret = qemuProcessStart(conn, driver, vm, "stdio", *fd, path, NULL,
+    ret = qemuProcessStart(conn, driver, vm, QEMU_ASYNC_JOB_NONE,
+                           "stdio", *fd, path, NULL,
                            VIR_NETDEV_VPORT_PROFILE_OP_RESTORE,
                            VIR_QEMU_PROCESS_START_PAUSED);
 
@@ -6095,7 +6097,8 @@ qemuDomainObjStart(virConnectPtr conn,
         }
     }
 
-    ret = qemuProcessStart(conn, driver, vm, NULL, -1, NULL, NULL,
+    ret = qemuProcessStart(conn, driver, vm, QEMU_ASYNC_JOB_NONE,
+                           NULL, -1, NULL, NULL,
                            VIR_NETDEV_VPORT_PROFILE_OP_CREATE, start_flags);
     virDomainAuditStart(vm, "booted", ret >= 0);
     if (ret >= 0) {
@@ -6452,7 +6455,7 @@ qemuDomainAttachDeviceLive(virDomainObjPtr vm,
     }
 
     if (ret == 0)
-        qemuDomainUpdateDeviceList(driver, vm);
+        qemuDomainUpdateDeviceList(driver, vm, QEMU_ASYNC_JOB_NONE);
 
     return ret;
 }
@@ -6512,7 +6515,7 @@ qemuDomainDetachDeviceLive(virDomainObjPtr vm,
     }
 
     if (ret == 0)
-        qemuDomainUpdateDeviceList(driver, vm);
+        qemuDomainUpdateDeviceList(driver, vm, QEMU_ASYNC_JOB_NONE);
 
     return ret;
 }
@@ -14187,8 +14190,8 @@ static int qemuDomainRevertToSnapshot(virDomainSnapshotPtr snapshot,
             if (config)
                 virDomainObjAssignDef(vm, config, false, NULL);
 
-            rc = qemuProcessStart(snapshot->domain->conn,
-                                  driver, vm, NULL, -1, NULL, snap,
+            rc = qemuProcessStart(snapshot->domain->conn, driver, vm,
+                                  QEMU_ASYNC_JOB_NONE, NULL, -1, NULL, snap,
                                   VIR_NETDEV_VPORT_PROFILE_OP_CREATE,
                                   VIR_QEMU_PROCESS_START_PAUSED);
             virDomainAuditStart(vm, "from-snapshot", rc >= 0);
@@ -14281,8 +14284,8 @@ static int qemuDomainRevertToSnapshot(virDomainSnapshotPtr snapshot,
 
             if (event)
                 qemuDomainEventQueue(driver, event);
-            rc = qemuProcessStart(snapshot->domain->conn,
-                                  driver, vm, NULL, -1, NULL, NULL,
+            rc = qemuProcessStart(snapshot->domain->conn, driver, vm,
+                                  QEMU_ASYNC_JOB_NONE, NULL, -1, NULL, NULL,
                                   VIR_NETDEV_VPORT_PROFILE_OP_CREATE,
                                   start_flags);
             virDomainAuditStart(vm, "from-snapshot", rc >= 0);
