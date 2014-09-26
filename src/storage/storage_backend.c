@@ -362,6 +362,8 @@ createRawFile(int fd, virStorageVolDefPtr vol,
      * to writing zeroes block by block in case fallocate isn't
      * available, and since we're going to copy data from another
      * file it doesn't make sense to write the file twice. */
+
+/* Remove calls to fallocate() till fs corruption is not fixed.
     if (vol->target.allocation) {
         if (fallocate(fd, 0, 0, vol->target.allocation) == 0) {
             need_alloc = false;
@@ -373,6 +375,7 @@ createRawFile(int fd, virStorageVolDefPtr vol,
             goto cleanup;
         }
     }
+*/
 #endif
 
     remain = vol->target.allocation;
