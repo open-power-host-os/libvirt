@@ -95,13 +95,6 @@ struct _virCapsHostNUMACellCPU {
     virBitmapPtr siblings;
 };
 
-typedef struct _virCapsHostNUMACellSiblingInfo virCapsHostNUMACellSiblingInfo;
-typedef virCapsHostNUMACellSiblingInfo *virCapsHostNUMACellSiblingInfoPtr;
-struct _virCapsHostNUMACellSiblingInfo {
-    int node;               /* foreign NUMA node */
-    unsigned int distance;  /* distance to the node */
-};
-
 typedef struct _virCapsHostNUMACell virCapsHostNUMACell;
 typedef virCapsHostNUMACell *virCapsHostNUMACellPtr;
 struct _virCapsHostNUMACell {
@@ -109,8 +102,6 @@ struct _virCapsHostNUMACell {
     int ncpus;
     unsigned long long mem; /* in kibibytes */
     virCapsHostNUMACellCPUPtr cpus;
-    int nsiblings;
-    virCapsHostNUMACellSiblingInfoPtr siblings;
 };
 
 typedef struct _virCapsHostSecModelLabel virCapsHostSecModelLabel;
@@ -202,11 +193,9 @@ virCapabilitiesAddHostMigrateTransport(virCapsPtr caps,
 extern int
 virCapabilitiesAddHostNUMACell(virCapsPtr caps,
                                int num,
-                               unsigned long long mem,
                                int ncpus,
-                               virCapsHostNUMACellCPUPtr cpus,
-                               int nsiblings,
-                               virCapsHostNUMACellSiblingInfoPtr siblings);
+                               unsigned long long mem,
+                               virCapsHostNUMACellCPUPtr cpus);
 
 
 extern int

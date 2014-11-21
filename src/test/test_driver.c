@@ -336,9 +336,8 @@ testBuildCapabilities(virConnectPtr conn)
                sizeof(*cpu_cells) * privconn->cells[i].numCpus);
 
 
-        if (virCapabilitiesAddHostNUMACell(caps, i, 0,
-                                           privconn->cells[i].numCpus,
-                                           cpu_cells, 0, NULL) < 0)
+        if (virCapabilitiesAddHostNUMACell(caps, i, privconn->cells[i].numCpus,
+                                           0, cpu_cells) < 0)
             goto error;
     }
 

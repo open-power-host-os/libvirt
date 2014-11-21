@@ -107,7 +107,6 @@ virCapabilitiesFreeHostNUMACell(virCapsHostNUMACellPtr cell)
     virCapabilitiesClearHostNUMACellCPUTopology(cell->cpus, cell->ncpus);
 
     VIR_FREE(cell->cpus);
-    VIR_FREE(cell->siblings);
     VIR_FREE(cell);
 }
 
@@ -276,11 +275,9 @@ virCapabilitiesAddHostMigrateTransport(virCapsPtr caps,
  * virCapabilitiesAddHostNUMACell:
  * @caps: capabilities to extend
  * @num: ID number of NUMA cell
- * @mem: Total size of memory in the NUMA node (in KiB)
  * @ncpus: number of CPUs in cell
+ * @mem: Total size of memory in the NUMA node (in KiB)
  * @cpus: array of CPU definition structures, the pointer is stolen
- * @nsiblings: number of sibling NUMA nodes
- * @siblings: info on sibling NUMA nodes
  *
  * Registers a new NUMA cell for a host, passing in a
  * array of CPU IDs belonging to the cell
@@ -288,11 +285,9 @@ virCapabilitiesAddHostMigrateTransport(virCapsPtr caps,
 int
 virCapabilitiesAddHostNUMACell(virCapsPtr caps,
                                int num,
-                               unsigned long long mem,
                                int ncpus,
-                               virCapsHostNUMACellCPUPtr cpus,
-                               int nsiblings,
-                               virCapsHostNUMACellSiblingInfoPtr siblings)
+                               unsigned long long mem,
+                               virCapsHostNUMACellCPUPtr cpus)
 {
     virCapsHostNUMACellPtr cell;
 
@@ -307,8 +302,6 @@ virCapabilitiesAddHostNUMACell(virCapsPtr caps,
     cell->num = num;
     cell->mem = mem;
     cell->cpus = cpus;
-    cell->siblings = siblings;
-    cell->nsiblings = nsiblings;
 
     caps->host.numaCell[caps->host.nnumaCell++] = cell;
 
@@ -772,18 +765,6 @@ virCapabilitiesFormatNUMATopology(virBufferPtr buf,
         if (cells[i]->mem)
             virBufferAsprintf(buf, "<memory unit='KiB'>%llu</memory>\n",
                               cells[i]->mem);
-
-        if (cells[i]->nsiblings) {
-            virBufferAddLit(buf, "<distances>\n");
-            virBufferAdjustIndent(buf, 2);
-            for (j = 0; j < cells[i]->nsiblings; j++) {
-                virBufferAsprintf(buf, "<sibling id='%d' value='%d'/>\n",
-                                  cells[i]->siblings[j].node,
-                                  cells[i]->siblings[j].distance);
-            }
-            virBufferAdjustIndent(buf, -2);
-            virBufferAddLit(buf, "</distances>\n");
-        }
 
         virBufferAsprintf(buf, "<cpus num='%d'>\n", cells[i]->ncpus);
         virBufferAdjustIndent(buf, 2);
