@@ -549,12 +549,12 @@ ppcUpdate(virCPUDefPtr guest,
           const virCPUDef *host)
 {
     switch ((virCPUMode) guest->mode) {
-    case VIR_CPU_MODE_HOST_MODEL:
     case VIR_CPU_MODE_HOST_PASSTHROUGH:
         guest->match = VIR_CPU_MATCH_EXACT;
         virCPUDefFreeModel(guest);
         return virCPUDefCopyModel(guest, host, true);
 
+    case VIR_CPU_MODE_HOST_MODEL:
     case VIR_CPU_MODE_CUSTOM:
         return 0;
 
