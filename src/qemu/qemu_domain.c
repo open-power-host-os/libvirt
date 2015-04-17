@@ -1038,17 +1038,17 @@ qemuDomainDefPostParse(virDomainDefPtr def,
 
     if (addDefaultUSB &&
         virDomainDefMaybeAddController(
-            def, VIR_DOMAIN_CONTROLLER_TYPE_USB, 0, -1) < 0)
+            def, VIR_DOMAIN_CONTROLLER_TYPE_USB, 0, 0, -1) < 0)
         return -1;
 
     if (addImplicitSATA &&
         virDomainDefMaybeAddController(
-            def, VIR_DOMAIN_CONTROLLER_TYPE_SATA, 0, -1) < 0)
+            def, VIR_DOMAIN_CONTROLLER_TYPE_SATA, 0, 0, -1) < 0)
         return -1;
 
     if (addPCIRoot &&
         virDomainDefMaybeAddController(
-            def, VIR_DOMAIN_CONTROLLER_TYPE_PCI, 0,
+            def, VIR_DOMAIN_CONTROLLER_TYPE_PCI, 0, 0,
             VIR_DOMAIN_CONTROLLER_MODEL_PCI_ROOT) < 0)
         return -1;
 
@@ -1058,13 +1058,13 @@ qemuDomainDefPostParse(virDomainDefPtr def,
      */
     if (addPCIeRoot) {
         if (virDomainDefMaybeAddController(
-                def, VIR_DOMAIN_CONTROLLER_TYPE_PCI, 0,
+                def, VIR_DOMAIN_CONTROLLER_TYPE_PCI, 0, 0,
                 VIR_DOMAIN_CONTROLLER_MODEL_PCIE_ROOT) < 0 ||
             virDomainDefMaybeAddController(
-                def, VIR_DOMAIN_CONTROLLER_TYPE_PCI, 1,
+                def, VIR_DOMAIN_CONTROLLER_TYPE_PCI, 0, 1,
                 VIR_DOMAIN_CONTROLLER_MODEL_DMI_TO_PCI_BRIDGE) < 0 ||
             virDomainDefMaybeAddController(
-                def, VIR_DOMAIN_CONTROLLER_TYPE_PCI, 2,
+                def, VIR_DOMAIN_CONTROLLER_TYPE_PCI, 0, 2,
                 VIR_DOMAIN_CONTROLLER_MODEL_PCI_BRIDGE) < 0) {
         return -1;
         }

@@ -63,7 +63,7 @@ bhyveDomainDefPostParse(virDomainDefPtr def,
                         void *opaque ATTRIBUTE_UNUSED)
 {
     /* Add an implicit PCI root controller */
-    if (virDomainDefMaybeAddController(def, VIR_DOMAIN_CONTROLLER_TYPE_PCI, 0,
+    if (virDomainDefMaybeAddController(def, VIR_DOMAIN_CONTROLLER_TYPE_PCI, 0, 0,
                                        VIR_DOMAIN_CONTROLLER_MODEL_PCI_ROOT) < 0)
         return -1;
 

@@ -720,6 +720,8 @@ qemuNetworkPrepareDevices(virDomainDefPtr def)
             }
             if (virDomainHostdevInsert(def, hostdev) < 0)
                 goto cleanup;
+            if (virDomainDefMaybeAddHostdevSpaprPCIVfioControllers(def) < 0)
+                goto cleanup;
         }
     }
     ret = 0;
@@ -2208,7 +2210,7 @@ qemuDomainAssignPCIAddresses(virDomainDefPtr def,
                 virDomainPCIAddressBusPtr bus = &addrs->buses[i];
 
                 if ((rv = virDomainDefMaybeAddController(
-                         def, VIR_DOMAIN_CONTROLLER_TYPE_PCI,
+                         def, VIR_DOMAIN_CONTROLLER_TYPE_PCI, 0,
                          i, bus->model)) < 0)
                     goto cleanup;
                 /* If we added a new bridge, we will need one more address */

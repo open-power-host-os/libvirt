@@ -8280,6 +8280,9 @@ qemuDomainAttachDeviceConfig(virQEMUCapsPtr qemuCaps,
         net = dev->data.net;
         if (virDomainNetInsert(vmdef, net))
             return -1;
+        if (dev->data.net->type == VIR_DOMAIN_NET_TYPE_HOSTDEV)
+           if (virDomainDefMaybeAddHostdevSpaprPCIVfioControllers(vmdef) < 0)
+              return -1;
         dev->data.net = NULL;
         if (qemuDomainAssignAddresses(vmdef, qemuCaps, NULL) < 0)
             return -1;
@@ -8294,6 +8297,9 @@ qemuDomainAttachDeviceConfig(virQEMUCapsPtr qemuCaps,
         }
         if (virDomainHostdevInsert(vmdef, hostdev))
             return -1;
+        if (IS_PCI_VFIO_HOSTDEV(hostdev))
+           if (virDomainDefMaybeAddHostdevSpaprPCIVfioControllers(vmdef) < 0)
+              return -1;
         dev->data.hostdev = NULL;
         if (virDomainDefAddImplicitControllers(vmdef) < 0)
             return -1;
