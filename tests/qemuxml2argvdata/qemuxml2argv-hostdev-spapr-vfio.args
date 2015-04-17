@@ -1,0 +1,20 @@
+LC_ALL=C PATH=/bin HOME=/home/test USER=test LOGNAME=test QEMU_AUDIO_DRV=none \
+/usr/bin/qemu-system-ppc64 -S -M pseries -m 512 -realtime mlock=off -smp 1 \
+-nographic -nodefaults -monitor unix:/tmp/test-monitor,server,nowait -no-acpi \
+-boot c -device spapr-vscsi,id=scsi0,reg=0x2000 \
+-device spapr-pci-vfio-host-bridge,iommu=3,id=vfiohostbridge3,index=1 \
+-device spapr-pci-vfio-host-bridge,iommu=156,id=vfiohostbridge156,index=2 \
+-device pci-bridge,chassis_nr=3,id=vfiohostbridge3.1,bus=vfiohostbridge3.0,addr=0x2 \
+-device pci-bridge,chassis_nr=3,id=vfiohostbridge3.2,bus=vfiohostbridge3.0,addr=0x3 \
+-usb -drive file=/dev/HostVG/QEMUGuest1,if=none,id=drive-scsi0-0-0-0 \
+-device scsi-disk,bus=scsi0.0,channel=0,scsi-id=0,lun=0,\
+drive=drive-scsi0-0-0-0,id=scsi0-0-0-0 \
+-drive file=/root/boot.iso,if=none,media=cdrom,id=drive-scsi0-0-0-2 \
+-device scsi-disk,bus=scsi0.0,channel=0,scsi-id=0,lun=2,\
+drive=drive-scsi0-0-0-2,id=scsi0-0-0-2 \
+-serial pty -device vfio-pci,host=0003:05:00.1,id=hostdev0,\
+bus=vfiohostbridge156.0,addr=0x1 \
+-device vfio-pci,host=0003:20:01.0,id=hostdev1,bus=vfiohostbridge3.0,\
+multifunction=on,addr=0x1 \
+-device vfio-pci,host=0003:20:01.1,id=hostdev2,bus=vfiohostbridge3.0,addr=0x1.0x1 \
+-device vfio-pci,host=0003:20:01.2,id=hostdev3,bus=vfiohostbridge3.2,addr=0x1
