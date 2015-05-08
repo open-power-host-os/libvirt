@@ -1136,11 +1136,9 @@ virStorageBackendGetBuildVolFromFunction(virStorageVolDefPtr vol,
     /* If either volume is a non-raw file vol, we need to use an external
      * tool for converting
      */
-    if ((vol->type == VIR_STORAGE_VOL_FILE &&
-         vol->target.format != VIR_STORAGE_FILE_RAW) ||
-        (inputvol->type == VIR_STORAGE_VOL_FILE &&
-         inputvol->target.format != VIR_STORAGE_FILE_RAW)) {
-
+    if (vol->type == VIR_STORAGE_VOL_BLOCK)
+        return virStorageBackendCreateBlockFrom;
+    else {
         if ((tool_type = virStorageBackendFindFSImageTool(NULL)) < 0) {
             virReportError(VIR_ERR_INTERNAL_ERROR, "%s",
                            _("creation of non-raw file images is "
@@ -1150,11 +1148,6 @@ virStorageBackendGetBuildVolFromFunction(virStorageVolDefPtr vol,
 
         return virStorageBackendFSImageToolTypeToFunc(tool_type);
     }
-
-    if (vol->type == VIR_STORAGE_VOL_BLOCK)
-        return virStorageBackendCreateBlockFrom;
-    else
-        return virStorageBackendCreateRaw;
 }
 
 
