@@ -3969,6 +3969,7 @@
             <ref name="tpm"/>
             <ref name="shmem"/>
             <ref name="memorydev"/>
+            <ref name="spaprcpusocket"/>
           </choice>
         </zeroOrMore>
         <optional>
@@ -4448,6 +4449,19 @@
         <element name="node">
           <ref name="unsignedInt"/>
         </element>
+      </interleave>
+    </element>
+  </define>
+
+  <define name="spaprcpusocket">
+    <element name="spapr-cpu-socket">
+      <attribute name="id">
+        <ref name="unsignedInt"/>
+      </attribute>
+      <interleave>
+        <optional>
+          <ref name="alias"/>
+        </optional>
       </interleave>
     </element>
   </define>

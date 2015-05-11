@@ -177,6 +177,7 @@ char *qemuBuildMemoryDeviceStr(virDomainMemoryDefPtr mem,
                                virDomainDefPtr def,
                                virQEMUCapsPtr qemuCaps);
 
+char *qemuBuildSpaprCPUSocketDeviceStr(virDomainSpaprCPUSocketDefPtr spaprsock);
 /* Legacy, pre device support */
 char *qemuBuildPCIHostdevPCIDevStr(virDomainHostdevDefPtr dev,
                                    virQEMUCapsPtr qemuCaps);

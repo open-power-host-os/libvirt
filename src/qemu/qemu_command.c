@@ -1232,6 +1232,10 @@ qemuAssignDeviceAliases(virDomainDefPtr def, virQEMUCapsPtr qemuCaps)
         if (virAsprintf(&def->hubs[i]->info.alias, "hub%zu", i) < 0)
             return -1;
     }
+    for (i = 0; i < def->nspaprcpusockets; i++) {
+        if (virAsprintf(&def->spaprcpusockets[i]->info.alias, "spaprcpusocket%zu", i) < 0)
+            return -1;
+    }
     for (i = 0; i < def->nshmems; i++) {
         if (virAsprintf(&def->shmems[i]->info.alias, "shmem%zu", i) < 0)
             return -1;
@@ -5006,6 +5010,33 @@ qemuBuildMemoryDeviceStr(virDomainMemoryDefPtr mem,
         break;
 
     }
+
+    if (virBufferCheckError(&buf) < 0)
+        return NULL;
+
+    return virBufferContentAndReset(&buf);
+}
+
+
+char *
+qemuBuildSpaprCPUSocketDeviceStr(virDomainSpaprCPUSocketDefPtr spaprcpusock)
+{
+    virBuffer buf = VIR_BUFFER_INITIALIZER;
+
+    if (!spaprcpusock->info.alias) {
+        virReportError(VIR_ERR_INTERNAL_ERROR, "%s",
+                       _("missing alias for spapr cpu socket device"));
+        return NULL;
+    }
+/*
+    if (!virQEMUCapsGet(qemuCaps, QEMU_CAPS_DEVICE_SPAPR_CPU_SOCKET)) {
+        virReportError(VIR_ERR_CONFIG_UNSUPPORTED, "%s",
+                       _("this qemu doesn't support the spapr-cpu-socket device"));
+        return NULL;
+    }
+*/
+    virBufferAsprintf(&buf, "spapr-cpu-socket,id=%s",
+                      spaprcpusock->info.alias);
 
     if (virBufferCheckError(&buf) < 0)
         return NULL;
@@ -8968,6 +8999,17 @@ qemuBuildCommandLine(virConnectPtr conn,
             VIR_FREE(backStr);
             VIR_FREE(dimmStr);
         }
+    }
+
+    for (i = 0; i < def->nspaprcpusockets; i++) {
+        char *spaprSockStr;
+
+        if (!(spaprSockStr = qemuBuildSpaprCPUSocketDeviceStr(def->spaprcpusockets[i])))
+           goto error;
+
+        virCommandAddArgList(cmd, "-device", spaprSockStr, NULL);
+
+        VIR_FREE(spaprSockStr);
     }
 
     if (virQEMUCapsGet(qemuCaps, QEMU_CAPS_UUID))
