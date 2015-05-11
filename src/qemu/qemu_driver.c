@@ -7734,6 +7734,12 @@ qemuDomainAttachDeviceLive(virDomainObjPtr vm,
         }
         break;
 
+    case VIR_DOMAIN_DEVICE_SPAPR_CPU_SOCKET:
+        ret = qemuDomainAttachSpaprCPUSocketDevice(driver, vm,
+                                     dev->data.spaprcpusocket);
+        dev->data.spaprcpusocket = NULL;
+        break;
+
     case VIR_DOMAIN_DEVICE_REDIRDEV:
         ret = qemuDomainAttachRedirdevDevice(driver, vm,
                                              dev->data.redirdev);
@@ -7857,6 +7863,9 @@ qemuDomainDetachDeviceLive(virDomainObjPtr vm,
         break;
     case VIR_DOMAIN_DEVICE_MEMORY:
         ret = qemuDomainDetachMemoryDevice(driver, vm, dev->data.memory);
+        break;
+    case VIR_DOMAIN_DEVICE_SPAPR_CPU_SOCKET:
+        ret = qemuDomainDetachSpaprCPUSocketDevice(driver, vm, dev->data.spaprcpusocket);
         break;
 
     case VIR_DOMAIN_DEVICE_FS:
@@ -7992,6 +8001,7 @@ qemuDomainUpdateDeviceLive(virConnectPtr conn,
     case VIR_DOMAIN_DEVICE_MEMBALLOON:
     case VIR_DOMAIN_DEVICE_NVRAM:
     case VIR_DOMAIN_DEVICE_RNG:
+    case VIR_DOMAIN_DEVICE_SPAPR_CPU_SOCKET:
     case VIR_DOMAIN_DEVICE_SHMEM:
     case VIR_DOMAIN_DEVICE_LEASE:
     case VIR_DOMAIN_DEVICE_HOSTDEV:
@@ -8167,6 +8177,7 @@ qemuDomainAttachDeviceConfig(virQEMUCapsPtr qemuCaps,
     case VIR_DOMAIN_DEVICE_HUB:
     case VIR_DOMAIN_DEVICE_SMARTCARD:
     case VIR_DOMAIN_DEVICE_MEMBALLOON:
+    case VIR_DOMAIN_DEVICE_SPAPR_CPU_SOCKET:
     case VIR_DOMAIN_DEVICE_NVRAM:
     case VIR_DOMAIN_DEVICE_SHMEM:
     case VIR_DOMAIN_DEVICE_REDIRDEV:
@@ -8303,6 +8314,7 @@ qemuDomainDetachDeviceConfig(virDomainDefPtr vmdef,
     case VIR_DOMAIN_DEVICE_HUB:
     case VIR_DOMAIN_DEVICE_SMARTCARD:
     case VIR_DOMAIN_DEVICE_MEMBALLOON:
+    case VIR_DOMAIN_DEVICE_SPAPR_CPU_SOCKET:
     case VIR_DOMAIN_DEVICE_NVRAM:
     case VIR_DOMAIN_DEVICE_SHMEM:
     case VIR_DOMAIN_DEVICE_REDIRDEV:
@@ -8392,6 +8404,7 @@ qemuDomainUpdateDeviceConfig(virQEMUCapsPtr qemuCaps,
     case VIR_DOMAIN_DEVICE_HUB:
     case VIR_DOMAIN_DEVICE_SMARTCARD:
     case VIR_DOMAIN_DEVICE_MEMBALLOON:
+    case VIR_DOMAIN_DEVICE_SPAPR_CPU_SOCKET:
     case VIR_DOMAIN_DEVICE_NVRAM:
     case VIR_DOMAIN_DEVICE_RNG:
     case VIR_DOMAIN_DEVICE_SHMEM:

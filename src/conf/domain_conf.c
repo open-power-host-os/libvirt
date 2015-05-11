@@ -233,7 +233,8 @@ VIR_ENUM_IMPL(virDomainDevice, VIR_DOMAIN_DEVICE_LAST,
               "shmem",
               "tpm",
               "panic",
-              "memory")
+              "memory",
+              "spapr-cpu-socket")
 
 VIR_ENUM_IMPL(virDomainDeviceAddress, VIR_DOMAIN_DEVICE_ADDRESS_TYPE_LAST,
               "none",
@@ -2124,6 +2125,15 @@ void virDomainRedirFilterDefFree(virDomainRedirFilterDefPtr def)
     VIR_FREE(def);
 }
 
+void virDomainSpaprCPUSocketDefFree(virDomainSpaprCPUSocketDefPtr def)
+{
+    if (!def)
+        return;
+
+    virDomainDeviceInfoClear(&def->info);
+    VIR_FREE(def);
+}
+
 void virDomainMemoryDefFree(virDomainMemoryDefPtr def)
 {
     if (!def)
@@ -2184,6 +2194,9 @@ void virDomainDeviceDefFree(virDomainDeviceDefPtr def)
         break;
     case VIR_DOMAIN_DEVICE_FS:
         virDomainFSDefFree(def->data.fs);
+        break;
+    case VIR_DOMAIN_DEVICE_SPAPR_CPU_SOCKET:
+        virDomainSpaprCPUSocketDefFree(def->data.spaprcpusocket);
         break;
     case VIR_DOMAIN_DEVICE_SMARTCARD:
         virDomainSmartcardDefFree(def->data.smartcard);
@@ -3073,6 +3086,8 @@ virDomainDeviceGetInfo(virDomainDeviceDefPtr device)
         return &device->data.chr->info;
     case VIR_DOMAIN_DEVICE_MEMBALLOON:
         return &device->data.memballoon->info;
+    case VIR_DOMAIN_DEVICE_SPAPR_CPU_SOCKET:
+        return &device->data.spaprcpusocket->info;
     case VIR_DOMAIN_DEVICE_NVRAM:
         return &device->data.nvram->info;
     case VIR_DOMAIN_DEVICE_SHMEM:
@@ -3368,6 +3383,12 @@ virDomainDeviceInfoIterateInternal(virDomainDefPtr def,
         if (cb(def, &device, &def->memballoon->info, opaque) < 0)
             return -1;
     }
+    device.type = VIR_DOMAIN_DEVICE_SPAPR_CPU_SOCKET;
+    for (i = 0; i < def->nspaprcpusockets; i++) {
+        device.data.spaprcpusocket = def->spaprcpusockets[i];
+        if (cb(def, &device, &def->spaprcpusockets[i]->info, opaque) < 0)
+            return -1;
+    }
     device.type = VIR_DOMAIN_DEVICE_RNG;
     for (i = 0; i < def->nrngs; i++) {
         device.data.rng = def->rngs[i];
@@ -3438,6 +3459,7 @@ virDomainDeviceInfoIterateInternal(virDomainDefPtr def,
     case VIR_DOMAIN_DEVICE_SMARTCARD:
     case VIR_DOMAIN_DEVICE_CHR:
     case VIR_DOMAIN_DEVICE_MEMBALLOON:
+    case VIR_DOMAIN_DEVICE_SPAPR_CPU_SOCKET:
     case VIR_DOMAIN_DEVICE_NVRAM:
     case VIR_DOMAIN_DEVICE_SHMEM:
     case VIR_DOMAIN_DEVICE_TPM:
@@ -12456,6 +12478,40 @@ virDomainMemoryTargetDefParseXML(xmlNodePtr node,
     return ret;
 }
 
+static virDomainSpaprCPUSocketDefPtr
+virDomainSpaprCPUSocketDefParseXML(xmlNodePtr sockdevNode,
+                           xmlXPathContextPtr ctxt,
+                           unsigned int flags)
+{
+    char *tmp = NULL;
+    char *idx = NULL;
+    virDomainSpaprCPUSocketDefPtr def;
+
+    ctxt->node = sockdevNode;
+
+    if (VIR_ALLOC(def) < 0)
+        return NULL;
+
+    idx = virXMLPropString(sockdevNode, "id");
+    if (idx) {
+        if (virStrToLong_ui(idx, NULL, 10, &def->idx) < 0 ||
+            def->idx > INT_MAX) {
+            virReportError(VIR_ERR_INTERNAL_ERROR,
+                           _("Cannot parse socket id %s"), idx);
+            goto error;
+        }
+    }
+
+    if (virDomainDeviceInfoParseXML(sockdevNode, NULL, &def->info, flags) < 0)
+        goto error;
+
+    return def;
+
+ error:
+    VIR_FREE(tmp);
+    virDomainSpaprCPUSocketDefFree(def);
+    return NULL;
+}
 
 static virDomainMemoryDefPtr
 virDomainMemoryDefParseXML(xmlNodePtr memdevNode,
@@ -12624,6 +12680,10 @@ virDomainDeviceDefParse(const char *xmlStr,
         break;
     case VIR_DOMAIN_DEVICE_SMARTCARD:
         if (!(dev->data.smartcard = virDomainSmartcardDefParseXML(node, flags)))
+            goto error;
+        break;
+    case VIR_DOMAIN_DEVICE_SPAPR_CPU_SOCKET:
+        if (!(dev->data.spaprcpusocket = virDomainSpaprCPUSocketDefParseXML(node, ctxt, flags)))
             goto error;
         break;
     case VIR_DOMAIN_DEVICE_MEMBALLOON:
@@ -13835,6 +13895,26 @@ virDomainMemoryInsert(virDomainDefPtr def,
     return id;
 }
 
+
+int
+virDomainSpaprCPUSocketInsert(virDomainDefPtr def,
+                      virDomainSpaprCPUSocketDefPtr spaprcpusock)
+{
+    int id = def->nspaprcpusockets;
+
+    if (spaprcpusock->info.type != VIR_DOMAIN_DEVICE_ADDRESS_TYPE_NONE &&
+        virDomainDefHasDeviceAddress(def, &spaprcpusock->info)) {
+        virReportError(VIR_ERR_OPERATION_INVALID, "%s",
+                       _("Domain already contains a device with the same "
+                         "address"));
+        return -1;
+    }
+
+    if (VIR_APPEND_ELEMENT(def->spaprcpusockets, def->nspaprcpusockets, spaprcpusock) < 0)
+        return -1;
+
+    return id;
+}
 
 virDomainMemoryDefPtr
 virDomainMemoryRemove(virDomainDefPtr def,
@@ -16299,6 +16379,21 @@ virDomainDefParseXML(xmlDocPtr xml,
         VIR_FREE(nodes);
     }
 
+    /* analysis of the spapr-cpu-socket devices */
+    if ((n = virXPathNodeSet("./devices/spapr-cpu-socket", ctxt, &nodes)) < 0)
+        goto error;
+    if (n && VIR_ALLOC_N(def->spaprcpusockets, n) < 0)
+        goto error;
+    for (i = 0; i < n; i++) {
+        virDomainSpaprCPUSocketDefPtr spaprcpu = virDomainSpaprCPUSocketDefParseXML(nodes[i],
+                                                                                    ctxt,
+                                                                                    flags);
+        if (!spaprcpu)
+            goto error;
+        def->spaprcpusockets[def->nspaprcpusockets++] = spaprcpu;
+     }
+     VIR_FREE(nodes);
+
     /* analysis of the hub devices */
     if ((n = virXPathNodeSet("./devices/hub", ctxt, &nodes)) < 0)
         goto error;
@@ -18182,6 +18277,7 @@ virDomainDefCheckABIStability(virDomainDefPtr src,
     case VIR_DOMAIN_DEVICE_PANIC:
     case VIR_DOMAIN_DEVICE_SHMEM:
     case VIR_DOMAIN_DEVICE_MEMORY:
+    case VIR_DOMAIN_DEVICE_SPAPR_CPU_SOCKET:
         break;
     }
 #endif
@@ -20814,6 +20910,24 @@ virDomainMemoryTargetDefFormat(virBufferPtr buf,
 }
 
 static int
+virDomainSpaprCPUSocketDefFormat(virBufferPtr buf,
+                         virDomainSpaprCPUSocketDefPtr def,
+                         unsigned int flags)
+{
+    if (virDomainDeviceInfoNeedsFormat(&def->info, flags)) {
+        virBufferAsprintf(buf, "<spapr-cpu-socket id='%u'>\n", def->idx);
+        virBufferAdjustIndent(buf, 2);
+        if (virDomainDeviceInfoFormat(buf, &def->info, flags) < 0)
+            return -1;
+        virBufferAdjustIndent(buf, -2);
+        virBufferAddLit(buf, "</spapr-cpu-socket>\n");
+    } else {
+        virBufferAsprintf(buf, "<spapr-cpu-socket id='%u'/>\n", def->idx);
+    }
+    return 0;
+}
+
+static int
 virDomainMemoryDefFormat(virBufferPtr buf,
                          virDomainMemoryDefPtr def,
                          unsigned int flags)
@@ -22453,6 +22567,10 @@ virDomainDefFormatInternal(virDomainDefPtr def,
         if (virDomainPanicDefFormat(buf, def->panics[n]) < 0)
             goto error;
 
+    for (n = 0; n < def->nspaprcpusockets; n++)
+        if (virDomainSpaprCPUSocketDefFormat(buf, def->spaprcpusockets[n], flags) < 0)
+            goto error;
+
     for (n = 0; n < def->nshmems; n++)
         if (virDomainShmemDefFormat(buf, def->shmems[n], flags) < 0)
             goto error;
@@ -23557,6 +23675,9 @@ virDomainDeviceDefCopy(virDomainDeviceDefPtr src,
         break;
     case VIR_DOMAIN_DEVICE_GRAPHICS:
         rc = virDomainGraphicsDefFormat(&buf, src->data.graphics, flags);
+        break;
+    case VIR_DOMAIN_DEVICE_SPAPR_CPU_SOCKET:
+        rc = virDomainSpaprCPUSocketDefFormat(&buf, src->data.spaprcpusocket, flags);
         break;
     case VIR_DOMAIN_DEVICE_HUB:
         rc = virDomainHubDefFormat(&buf, src->data.hub, flags);

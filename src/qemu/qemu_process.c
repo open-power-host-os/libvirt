@@ -2020,7 +2020,10 @@ qemuProcessDetectVcpuPIDs(virQEMUDriverPtr driver,
         return 0;
     }
 
-    if (ncpupids != virDomainDefGetVcpus(vm->def)) {
+    if (ncpupids != virDomainDefGetVcpus(vm->def) +
+                    (vm->def->nspaprcpusockets *
+                     vm->def->cpu->threads)) {
+
         virReportError(VIR_ERR_INTERNAL_ERROR,
                        _("got wrong number of vCPU pids from QEMU monitor. "
                          "got %d, wanted %d"),
