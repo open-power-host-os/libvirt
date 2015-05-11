@@ -463,6 +463,10 @@ qemuAssignDeviceAliases(virDomainDefPtr def, virQEMUCapsPtr qemuCaps)
         if (virAsprintf(&def->hubs[i]->info.alias, "hub%zu", i) < 0)
             return -1;
     }
+    for (i = 0; i < def->nspaprcpusockets; i++) {
+        if (virAsprintf(&def->spaprcpusockets[i]->info.alias, "spaprcpusocket%zu", i) < 0)
+            return -1;
+    }
     for (i = 0; i < def->nshmems; i++) {
         if (virAsprintf(&def->shmems[i]->info.alias, "shmem%zu", i) < 0)
             return -1;

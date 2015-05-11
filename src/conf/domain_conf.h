@@ -137,6 +137,9 @@ typedef virDomainPanicDef *virDomainPanicDefPtr;
 typedef struct _virDomainMemoryDef virDomainMemoryDef;
 typedef virDomainMemoryDef *virDomainMemoryDefPtr;
 
+typedef struct _virDomainSpaprCPUSocketDef virDomainSpaprCPUSocketDef;
+typedef virDomainSpaprCPUSocketDef *virDomainSpaprCPUSocketDefPtr;
+
 /* forward declarations virDomainChrSourceDef, required by
  * virDomainNetDef
  */
@@ -174,6 +177,7 @@ typedef enum {
     VIR_DOMAIN_DEVICE_TPM,
     VIR_DOMAIN_DEVICE_PANIC,
     VIR_DOMAIN_DEVICE_MEMORY,
+    VIR_DOMAIN_DEVICE_SPAPR_CPU_SOCKET,
 
     VIR_DOMAIN_DEVICE_LAST
 } virDomainDeviceType;
@@ -205,6 +209,7 @@ struct _virDomainDeviceDef {
         virDomainTPMDefPtr tpm;
         virDomainPanicDefPtr panic;
         virDomainMemoryDefPtr memory;
+        virDomainSpaprCPUSocketDefPtr spaprcpusocket;
     } data;
 };
 
@@ -2080,6 +2085,12 @@ struct _virDomainPanicDef {
     virDomainDeviceInfo info;
 };
 
+struct _virDomainSpaprCPUSocketDef {
+    unsigned int idx;
+    virDomainDeviceInfo info;
+};
+
+void virDomainSpaprCPUSocketDefFree(virDomainSpaprCPUSocketDefPtr def);
 
 void virBlkioDeviceArrayClear(virBlkioDevicePtr deviceWeights,
                               int ndevices);
@@ -2306,6 +2317,9 @@ struct _virDomainDef {
 
     size_t nchannels;
     virDomainChrDefPtr *channels;
+
+    size_t nspaprcpusockets;
+    virDomainSpaprCPUSocketDefPtr *spaprcpusockets;
 
     size_t nconsoles;
     virDomainChrDefPtr *consoles;
@@ -2982,6 +2996,9 @@ virDomainChrDefGetSecurityLabelDef(virDomainChrDefPtr def, const char *model);
 
 typedef const char* (*virEventActionToStringFunc)(int type);
 typedef int (*virEventActionFromStringFunc)(const char *type);
+
+int virDomainSpaprCPUSocketInsert(virDomainDefPtr def, virDomainSpaprCPUSocketDefPtr spaprcpusocket)
+    ATTRIBUTE_NONNULL(1) ATTRIBUTE_NONNULL(2) ATTRIBUTE_RETURN_CHECK;
 
 int virDomainMemoryInsert(virDomainDefPtr def, virDomainMemoryDefPtr mem)
     ATTRIBUTE_NONNULL(1) ATTRIBUTE_NONNULL(2) ATTRIBUTE_RETURN_CHECK;

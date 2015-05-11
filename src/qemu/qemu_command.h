@@ -148,6 +148,7 @@ int qemuBuildMemoryBackendStr(unsigned long long size,
 
 char *qemuBuildMemoryDeviceStr(virDomainMemoryDefPtr mem);
 
+char *qemuBuildSpaprCPUSocketDeviceStr(virDomainSpaprCPUSocketDefPtr spaprsock);
 /* Current, best practice */
 char *qemuBuildPCIHostdevDevStr(const virDomainDef *def,
                                 virDomainHostdevDefPtr dev,

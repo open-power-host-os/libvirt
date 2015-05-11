@@ -447,6 +447,8 @@ virDomainSmbiosModeTypeToString;
 virDomainSoundDefFree;
 virDomainSoundModelTypeFromString;
 virDomainSoundModelTypeToString;
+virDomainSpaprCPUSocketDefFree;
+virDomainSpaprCPUSocketInsert;
 virDomainStartupPolicyTypeFromString;
 virDomainStartupPolicyTypeToString;
 virDomainStateReasonFromString;
