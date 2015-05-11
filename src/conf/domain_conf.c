@@ -35,7 +35,6 @@
 #include "datatypes.h"
 #include "domain_conf.h"
 #include "snapshot_conf.h"
-#include "virpci.h"
 #include "viralloc.h"
 #include "virxml.h"
 #include "viruuid.h"
@@ -317,8 +316,7 @@ VIR_ENUM_IMPL(virDomainController, VIR_DOMAIN_CONTROLLER_TYPE_LAST,
               "virtio-serial",
               "ccid",
               "usb",
-              "pci",
-              "spapr-vfio-pci")
+              "pci")
 
 VIR_ENUM_IMPL(virDomainControllerModelPCI, VIR_DOMAIN_CONTROLLER_MODEL_PCI_LAST,
               "pci-root",
@@ -3410,8 +3408,6 @@ virDomainDefRejectDuplicateControllers(virDomainDefPtr def)
 
     /* multiple USB controllers with the same index are allowed */
     max_idx[VIR_DOMAIN_CONTROLLER_TYPE_USB] = -1;
-    /* The idx can be same across different pci domains */
-    max_idx[VIR_DOMAIN_CONTROLLER_TYPE_SPAPR_PCI_VFIO] = -1;
 
     for (i = 0; i < VIR_DOMAIN_CONTROLLER_TYPE_LAST; i++) {
         if (max_idx[i] >= 0 && !(bitmaps[i] = virBitmapNew(max_idx[i] + 1)))
@@ -7377,8 +7373,6 @@ virDomainControllerModelTypeFromString(const virDomainControllerDef *def,
         return virDomainControllerModelUSBTypeFromString(model);
     else if (def->type == VIR_DOMAIN_CONTROLLER_TYPE_PCI)
         return virDomainControllerModelPCITypeFromString(model);
-    else if (def->type == VIR_DOMAIN_CONTROLLER_TYPE_SPAPR_PCI_VFIO)
-        return virDomainControllerModelPCITypeFromString(model);
 
     return -1;
 }
@@ -7556,48 +7550,7 @@ virDomainControllerDefParseXML(xmlNodePtr node,
             def->opts.pciopts.pcihole64size = VIR_DIV_UP(bytes, 1024);
         }
         }
-        break;
-    case VIR_DOMAIN_CONTROLLER_TYPE_SPAPR_PCI_VFIO: {
-        char *iommuStr = NULL;
-        char *domainStr = NULL;
 
-        def->domain = -1;
-        def->opts.spaprvfio.iommuGroupNum = -1;
-        if (def->model == VIR_DOMAIN_CONTROLLER_MODEL_PCI_ROOT) {
-            if (def->idx != 0) {
-                virReportError(VIR_ERR_XML_ERROR, "%s",
-                               _("pci-root and pcie-root controllers "
-                                 "should have index 0"));
-                goto error;
-            }
-        }
-        domainStr = virXMLPropString(node, "domain");
-        if (domainStr) {
-            int r = virStrToLong_i(domainStr, NULL, 10,
-                                   &def->domain);
-            if (r != 0 || def->domain <= 0) {
-                virReportError(VIR_ERR_INTERNAL_ERROR,
-                               _("Invalid domain number: %s"), domainStr);
-                VIR_FREE(domainStr);
-                goto error;
-            }
-        }
-        VIR_FREE(domainStr);
-
-        iommuStr = virXMLPropString(node, "iommuGroupNum");
-        if (iommuStr) {
-            int r = virStrToLong_i(iommuStr, NULL, 10,
-                                   &def->opts.spaprvfio.iommuGroupNum);
-            if (r != 0 || def->opts.spaprvfio.iommuGroupNum < 0) {
-                virReportError(VIR_ERR_INTERNAL_ERROR,
-                               _("Invalid iommu group number: %s"), iommuStr);
-                VIR_FREE(iommuStr);
-                goto error;
-            }
-        }
-        VIR_FREE(iommuStr);
-        break;
-    }
     default:
         break;
     }
@@ -13648,7 +13601,6 @@ virDomainEmulatorPinDefParseXML(xmlNodePtr node)
 int
 virDomainDefMaybeAddController(virDomainDefPtr def,
                                int type,
-                               int domain,
                                int idx,
                                int model)
 {
@@ -13657,7 +13609,6 @@ virDomainDefMaybeAddController(virDomainDefPtr def,
 
     for (i = 0; i < def->ncontrollers; i++) {
         if (def->controllers[i]->type == type &&
-            def->controllers[i]->domain == domain &&
             def->controllers[i]->idx == idx)
             return 0;
     }
@@ -13666,7 +13617,6 @@ virDomainDefMaybeAddController(virDomainDefPtr def,
         return -1;
 
     cont->type = type;
-    cont->domain = domain;
     cont->idx = idx;
     cont->model = model;
 
@@ -13674,8 +13624,6 @@ virDomainDefMaybeAddController(virDomainDefPtr def,
         cont->opts.vioserial.ports = -1;
         cont->opts.vioserial.vectors = -1;
     }
-    if (cont->type == VIR_DOMAIN_CONTROLLER_TYPE_SPAPR_PCI_VFIO)
-        cont->opts.spaprvfio.iommuGroupNum = -1;
 
     if (VIR_APPEND_ELEMENT(def->controllers, def->ncontrollers, cont) < 0) {
         VIR_FREE(cont);
@@ -13785,95 +13733,6 @@ virDomainResourceDefParse(xmlNodePtr node,
     return NULL;
 }
 
-int
-virDomainDefMaybeAddHostdevSpaprPCIVfioControllers(virDomainDefPtr def)
-{
-    size_t i, j;
-    virDomainHostdevDefPtr hostdev;
-    virDomainControllerDefPtr controller;
-    int ret = -1;
-    int maxDomainId = 0;
-    int skip;
-
-    if (!(ARCH_IS_PPC64(def->os.arch)) ||
-        !(def->os.machine && STRPREFIX(def->os.machine, "pseries")))
-        return 0;
-
-    for (i = 0; i < def->nhostdevs; i++) {
-        hostdev = def->hostdevs[i];
-        if (IS_PCI_VFIO_HOSTDEV(hostdev))
-            hostdev->source.subsys.u.pci.iommu = -1;
-    }
-    /* The hostdevs belonging to same iommu are
-     * all part of same domain.
-     */
-    for (i = 0; i < def->ncontrollers; i++) {
-        controller = def->controllers[i];
-        if (controller->type == VIR_DOMAIN_CONTROLLER_TYPE_SPAPR_PCI_VFIO &&
-            controller->model == VIR_DOMAIN_CONTROLLER_MODEL_PCI_ROOT)
-            for (j = 0; j < def->nhostdevs; j++) {
-                hostdev = def->hostdevs[j];
-                if (IS_PCI_VFIO_HOSTDEV(hostdev))
-                    if (hostdev->info->addr.pci.domain == controller->domain)
-                        hostdev->source.subsys.u.pci.iommu = controller->opts.spaprvfio.iommuGroupNum;
-            }
-        if (controller->domain > maxDomainId)
-            maxDomainId = controller->domain;
-    }
-    /* If the spapr-vfio controller doesnt exist for the hostdev
-     * add a controller for that iommu group.
-     */
-    for (i = 0; i < def->nhostdevs; i++) {
-        skip = 0;
-        hostdev = def->hostdevs[i];
-        if (IS_PCI_VFIO_HOSTDEV(hostdev)) {
-            virPCIDeviceAddressPtr addr;
-            int iommu = -1;
-            if (hostdev->source.subsys.u.pci.iommu == -1) {
-                addr = (virPCIDeviceAddressPtr)&hostdev->source.subsys.u.pci.addr;
-                if ((iommu = virPCIDeviceAddressGetIOMMUGroupNum(addr)) < 0)
-                    goto error;
-                hostdev->source.subsys.u.pci.iommu = iommu;
-
-                for (j = 0; j < def->ncontrollers; j++) {
-                    controller = def->controllers[j];
-                    if (controller->type == VIR_DOMAIN_CONTROLLER_TYPE_SPAPR_PCI_VFIO &&
-                        controller->model == VIR_DOMAIN_CONTROLLER_MODEL_PCI_ROOT) {
-                        if (iommu == controller->opts.spaprvfio.iommuGroupNum)
-                            skip = 1;
-                    }
-                }
-                if (skip)
-                    continue;
-                if (virDomainDefMaybeAddController(def, VIR_DOMAIN_CONTROLLER_TYPE_SPAPR_PCI_VFIO,
-                                                   ++maxDomainId, 0, VIR_DOMAIN_CONTROLLER_MODEL_PCI_ROOT) < 0)
-                    goto error;
-                def->controllers[def->ncontrollers-1]->opts.spaprvfio.iommuGroupNum = iommu;
-            }
-        }
-    }
-
-    /* Remove redundant controllers which dont serve any hostdevs. */
-    for (i = 0; i < def->ncontrollers; i++) {
-        controller = def->controllers[i];
-        if (controller->type == VIR_DOMAIN_CONTROLLER_TYPE_SPAPR_PCI_VFIO) {
-           int usedController = 0;
-           for (j = 0; j < def->nhostdevs; j++) {
-               hostdev = def->hostdevs[j];
-               if (IS_PCI_VFIO_HOSTDEV(hostdev))
-                  if (hostdev->source.subsys.u.pci.iommu == controller->opts.spaprvfio.iommuGroupNum)
-                     usedController = 1;
-           }
-           if (!usedController)
-              VIR_DELETE_ELEMENT(def->controllers, i, def->ncontrollers);
-        }
-    }
-
-    ret = 0;
- error:
-    return ret;
-}
-
 static int
 virDomainDefMaybeAddHostdevSCSIcontroller(virDomainDefPtr def)
 {
@@ -13895,7 +13754,7 @@ virDomainDefMaybeAddHostdevSCSIcontroller(virDomainDefPtr def)
         return 0;
 
     for (i = 0; i <= maxController; i++) {
-        if (virDomainDefMaybeAddController(def, VIR_DOMAIN_CONTROLLER_TYPE_SCSI, 0, i, -1) < 0)
+        if (virDomainDefMaybeAddController(def, VIR_DOMAIN_CONTROLLER_TYPE_SCSI, i, -1) < 0)
             return -1;
     }
 
@@ -17606,7 +17465,7 @@ virDomainDefAddDiskControllersForType(virDomainDefPtr def,
         return 0;
 
     for (i = 0; i <= maxController; i++) {
-        if (virDomainDefMaybeAddController(def, controllerType, 0, i, -1) < 0)
+        if (virDomainDefMaybeAddController(def, controllerType, i, -1) < 0)
             return -1;
     }
 
@@ -17629,7 +17488,7 @@ virDomainDefMaybeAddVirtioSerialController(virDomainDefPtr def)
                 idx = channel->info.addr.vioserial.controller;
 
             if (virDomainDefMaybeAddController(def,
-                VIR_DOMAIN_CONTROLLER_TYPE_VIRTIO_SERIAL, 0, idx, -1) < 0)
+                VIR_DOMAIN_CONTROLLER_TYPE_VIRTIO_SERIAL, idx, -1) < 0)
                 return -1;
         }
     }
@@ -17644,7 +17503,7 @@ virDomainDefMaybeAddVirtioSerialController(virDomainDefPtr def)
                 idx = console->info.addr.vioserial.controller;
 
             if (virDomainDefMaybeAddController(def,
-                VIR_DOMAIN_CONTROLLER_TYPE_VIRTIO_SERIAL, 0, idx, -1) < 0)
+                VIR_DOMAIN_CONTROLLER_TYPE_VIRTIO_SERIAL, idx, -1) < 0)
                 return -1;
         }
     }
@@ -17684,7 +17543,7 @@ virDomainDefMaybeAddSmartcardController(virDomainDefPtr def)
 
         if (virDomainDefMaybeAddController(def,
                                            VIR_DOMAIN_CONTROLLER_TYPE_CCID,
-                                           0, idx, -1) < 0)
+                                           idx, -1) < 0)
             return -1;
     }
 
@@ -17727,9 +17586,6 @@ virDomainDefAddImplicitControllers(virDomainDefPtr def)
         return -1;
 
     if (virDomainDefMaybeAddHostdevSCSIcontroller(def) < 0)
-        return -1;
-
-    if (virDomainDefMaybeAddHostdevSpaprPCIVfioControllers(def) < 0)
         return -1;
 
     return 0;
@@ -18620,8 +18476,6 @@ virDomainControllerModelTypeToString(virDomainControllerDefPtr def,
         return virDomainControllerModelUSBTypeToString(model);
     else if (def->type == VIR_DOMAIN_CONTROLLER_TYPE_PCI)
         return virDomainControllerModelPCITypeToString(model);
-    else if (def->type == VIR_DOMAIN_CONTROLLER_TYPE_SPAPR_PCI_VFIO)
-        return virDomainControllerModelPCITypeToString(model);
 
     return NULL;
 }
@@ -18674,12 +18528,7 @@ virDomainControllerDefFormat(virBufferPtr buf,
         if (def->opts.pciopts.pcihole64)
             pcihole64 = true;
         break;
-    case VIR_DOMAIN_CONTROLLER_TYPE_SPAPR_PCI_VFIO:
-        virBufferAsprintf(buf, " iommuGroupNum='%d'",
-                          def->opts.spaprvfio.iommuGroupNum);
-        virBufferAsprintf(buf, " domain='%d'",
-                          def->domain);
-        break;
+
     default:
         break;
     }

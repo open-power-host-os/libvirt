@@ -1769,34 +1769,6 @@
               </group>
             </choice>
           </group>
-          <!-- spapr-vfio-pci has a default "model" -->
-          <group>
-            <attribute name="type">
-              <value>spapr-vfio-pci</value>
-            </attribute>
-            <attribute name="iommuGroupNum">
-              <ref name="unsignedInt"/>
-            </attribute>
-            <attribute name="domain">
-              <ref name="unsignedInt"/>
-            </attribute>
-            <choice>
-              <group>
-                <attribute name="model">
-                  <choice>
-                    <value>pci-root</value>
-                  </choice>
-                </attribute>
-              </group>
-              <group>
-                <attribute name="model">
-                  <choice>
-                    <value>pci-bridge</value>
-                  </choice>
-                </attribute>
-              </group>
-            </choice>
-          </group>
           <!-- virtio-serial has optional "ports" and "vectors" -->
           <group>
             <attribute name="type">

@@ -454,7 +454,6 @@ typedef virDomainHostdevSubsysPCI *virDomainHostdevSubsysPCIPtr;
 struct _virDomainHostdevSubsysPCI {
     virDevicePCIAddress addr; /* host address */
     int backend; /* enum virDomainHostdevSubsysPCIBackendType */
-    int iommu;
 };
 
 typedef struct _virDomainHostdevSubsysSCSIHost virDomainHostdevSubsysSCSIHost;
@@ -742,7 +741,6 @@ typedef enum {
     VIR_DOMAIN_CONTROLLER_TYPE_CCID,
     VIR_DOMAIN_CONTROLLER_TYPE_USB,
     VIR_DOMAIN_CONTROLLER_TYPE_PCI,
-    VIR_DOMAIN_CONTROLLER_TYPE_SPAPR_PCI_VFIO,
 
     VIR_DOMAIN_CONTROLLER_TYPE_LAST
 } virDomainControllerType;
@@ -800,12 +798,6 @@ struct _virDomainPCIControllerOpts {
     unsigned long pcihole64size;
 };
 
-typedef struct _virDomainSPAPRVfioControllerOpts virDomainSPAPRVfioControllerOpts;
-typedef virDomainSPAPRVfioControllerOpts *virDomainiSPAPRVfioControllerOptsPtr;
-struct _virDomainSPAPRVfioControllerOpts {
-    int iommuGroupNum;
-};
-
 /* Stores the virtual disk controller configuration */
 struct _virDomainControllerDef {
     int type;
@@ -814,11 +806,9 @@ struct _virDomainControllerDef {
     unsigned int queues;
     unsigned int cmd_per_lun;
     unsigned int max_sectors;
-    int domain;
     union {
         virDomainVirtioSerialOpts vioserial;
         virDomainPCIControllerOpts pciopts;
-        virDomainSPAPRVfioControllerOpts spaprvfio;
     } opts;
     virDomainDeviceInfo info;
 };
@@ -3106,15 +3096,12 @@ int virDomainObjListConvert(virDomainObjListPtr domlist,
 int
 virDomainDefMaybeAddController(virDomainDefPtr def,
                                int type,
-                               int domain,
                                int idx,
                                int model);
 int
 virDomainDefMaybeAddInput(virDomainDefPtr def,
                           int type,
                           int bus);
-int
-virDomainDefMaybeAddHostdevSpaprPCIVfioControllers(virDomainDefPtr def);
 
 char *virDomainDefGetDefaultEmulator(virDomainDefPtr def, virCapsPtr caps);
 
@@ -3153,12 +3140,6 @@ virDomainParseMemory(const char *xpath,
                      unsigned long long *mem,
                      bool required,
                      bool capped);
-
-# define IS_PCI_VFIO_HOSTDEV(dvc) \
-    (((dvc)->mode == VIR_DOMAIN_HOSTDEV_MODE_SUBSYS) && \
-     ((dvc)->source.subsys.type == VIR_DOMAIN_HOSTDEV_SUBSYS_TYPE_PCI) && \
-     (((dvc)->source.subsys.u.pci.backend == VIR_DOMAIN_HOSTDEV_PCI_BACKEND_VFIO) || \
-     ((dvc)->source.subsys.u.pci.backend == VIR_DOMAIN_HOSTDEV_PCI_BACKEND_DEFAULT)))
 
 bool virDomainDefNeedsPlacementAdvice(virDomainDefPtr def)
     ATTRIBUTE_NONNULL(1);

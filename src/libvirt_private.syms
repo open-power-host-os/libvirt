@@ -216,7 +216,6 @@ virDomainDefGetMemoryInitial;
 virDomainDefGetSecurityLabelDef;
 virDomainDefHasDeviceAddress;
 virDomainDefMaybeAddController;
-virDomainDefMaybeAddHostdevSpaprPCIVfioControllers;
 virDomainDefMaybeAddInput;
 virDomainDefNeedsPlacementAdvice;
 virDomainDefNew;
