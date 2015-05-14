@@ -4539,6 +4539,7 @@ qemuDomainDetectVcpuPids(virQEMUDriverPtr driver,
 {
     pid_t *cpupids = NULL;
     int ncpupids = 0;
+    int actualVcpus = virDomainDefGetVcpus(vm->def);
     qemuDomainObjPrivatePtr priv = vm->privateData;
 
     /*
@@ -4588,9 +4589,14 @@ qemuDomainDetectVcpuPids(virQEMUDriverPtr driver,
         goto done;
     }
 
-    if (ncpupids != virDomainDefGetVcpus(vm->def) +
-                    (vm->def->nspaprcpusockets *
-                     vm->def->cpu->threads)) {
+/*
+    if (vm->def->cpu) {
+        actualVcpus = virDomainDefGetVcpus(vm->def) + (vm->def->nspaprcpusockets *
+                                        vm->def->cpu->cores *
+                                        vm->def->cpu->threads);
+    }
+*/
+    if (ncpupids != actualVcpus) {
         virReportError(VIR_ERR_INTERNAL_ERROR,
                        _("got wrong number of vCPU pids from QEMU monitor. "
                          "got %d, wanted %d"),
