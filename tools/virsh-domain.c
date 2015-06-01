@@ -4234,12 +4234,9 @@ vshWatchJob(vshControl *ctl,
         if (ret > 0) {
             if (pollfd[1].revents & POLLIN &&
                 saferead(STDIN_FILENO, &retchar, sizeof(retchar)) > 0) {
-                if (vshTTYIsInterruptCharacter(ctl, retchar)) {
+                if (vshTTYIsInterruptCharacter(ctl, retchar))
                     virDomainAbortJob(dom);
-                    goto cleanup;
-                } else {
-                    continue;
-                }
+                continue;
             }
 
             if (pollfd[0].revents & POLLIN &&
@@ -4259,9 +4256,8 @@ vshWatchJob(vshControl *ctl,
                 if (intCaught) {
                     virDomainAbortJob(dom);
                     intCaught = 0;
-                } else {
-                    continue;
                 }
+                continue;
             }
             goto cleanup;
         }
