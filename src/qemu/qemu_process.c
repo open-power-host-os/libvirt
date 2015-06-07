@@ -2185,18 +2185,19 @@ qemuProcessDetectVcpuPIDs(virQEMUDriverPtr driver,
         return 0;
     }
 
-/*
     if (vm->def->cpu) {
         actualVcpus = vm->def->vcpus + (vm->def->nspaprcpusockets *
                                         vm->def->cpu->cores *
                                         vm->def->cpu->threads);
+    } else {
+        actualVcpus = vm->def->vcpus + vm->def->nspaprcpusockets;
     }
-*/
+
     if (ncpupids != actualVcpus) {
         virReportError(VIR_ERR_INTERNAL_ERROR,
                        _("got wrong number of vCPU pids from QEMU monitor. "
                          "got %d, wanted %d"),
-                       ncpupids, vm->def->vcpus);
+                       ncpupids, actualVcpus);
         VIR_FREE(cpupids);
         return -1;
     }
