@@ -12483,7 +12483,6 @@ virDomainSpaprCPUSocketDefParseXML(xmlNodePtr sockdevNode,
                            xmlXPathContextPtr ctxt,
                            unsigned int flags)
 {
-    char *tmp = NULL;
     char *idx = NULL;
     virDomainSpaprCPUSocketDefPtr def;
 
@@ -12501,6 +12500,7 @@ virDomainSpaprCPUSocketDefParseXML(xmlNodePtr sockdevNode,
             goto error;
         }
     }
+    VIR_FREE(idx);
 
     if (virDomainDeviceInfoParseXML(sockdevNode, NULL, &def->info, flags) < 0)
         goto error;
@@ -12508,7 +12508,7 @@ virDomainSpaprCPUSocketDefParseXML(xmlNodePtr sockdevNode,
     return def;
 
  error:
-    VIR_FREE(tmp);
+    VIR_FREE(idx);
     virDomainSpaprCPUSocketDefFree(def);
     return NULL;
 }

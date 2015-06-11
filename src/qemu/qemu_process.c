@@ -2038,6 +2038,7 @@ qemuProcessDetectVcpuPIDs(virQEMUDriverPtr driver,
         return -1;
     }
 
+    ignore_value(virDomainDefSetVcpus(vm->def, actualVcpus));
     priv->nvcpupids = ncpupids;
     priv->vcpupids = cpupids;
     return 0;
