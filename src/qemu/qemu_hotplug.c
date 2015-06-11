@@ -1832,81 +1832,6 @@ qemuDomainAttachMemory(virQEMUDriverPtr driver,
 }
 
 int
-qemuDomainAttachSpaprCPUSocketDevice(virQEMUDriverPtr driver,
-                       virDomainObjPtr vm,
-                       virDomainSpaprCPUSocketDefPtr spaprcpu)
-{
-    qemuDomainObjPrivatePtr priv = vm->privateData;
-    char *devstr = NULL;
-    char *cpualias;
-    virJSONValuePtr props = NULL;
-    int ret = -1;
-    size_t i = -1;
-
-    if (spaprcpu->idx != vm->def->nspaprcpusockets) {
-        virReportError(VIR_ERR_CONFIG_UNSUPPORTED,
-                       _("Non-contiguous socket index '%u' not allowed. Expecting : %zu"),
-                       spaprcpu->idx, vm->def->nspaprcpusockets);
-        goto cleanup;
-    }
-
-    if (virAsprintf(&cpualias, "spaprsocket%zu", vm->def->nspaprcpusockets) < 0)
-        goto cleanup;
-    spaprcpu->info.alias = cpualias;
-
-    if (virDomainSpaprCPUSocketInsert(vm->def, spaprcpu) < 0) {
-        virJSONValueFree(props);
-        goto cleanup;
-    }
-
-    if (!(devstr = qemuBuildSpaprCPUSocketDeviceStr(vm->def->spaprcpusockets[vm->def->nspaprcpusockets-1])))
-        goto cleanup;
-
-    qemuDomainObjEnterMonitor(driver, vm);
-
-    if (qemuMonitorAddDevice(priv->mon, devstr) < 0) {
-        virErrorPtr err = virSaveLastError();
-        virSetError(err);
-        virFreeError(err);
-        goto removedef;
-    }
-
-    if (qemuDomainObjExitMonitor(driver, vm) < 0) {
-        spaprcpu = NULL;
-        goto cleanup;
-    }
-
-    spaprcpu = NULL;
-
-    /* this step is best effort, removing the device would be so much trouble */
-/*    ignore_value(qemuDomainUpdateSpaprCPUSocketDeviceInfo(driver, vm,
-                                                  QEMU_ASYNC_JOB_NONE));
-*/
-    ret = 0;
-
- cleanup:
-    VIR_FREE(devstr);
-    virDomainSpaprCPUSocketDefFree(spaprcpu);
-    return ret;
-
- removedef:
-    if (qemuDomainObjExitMonitor(driver, vm) < 0) {
-        spaprcpu = NULL;
-        goto cleanup;
-    }
-
-    for (i = 0; i < vm->def->nspaprcpusockets; i++) {
-        if (vm->def->spaprcpusockets[i] == spaprcpu) {
-            VIR_DELETE_ELEMENT(vm->def->spaprcpusockets, i,
-                               vm->def->nspaprcpusockets);
-            break;
-        }
-    }
-
-    goto cleanup;
-}
-
-static int
 qemuDomainRemoveSpaprCPUSocketDevice(virQEMUDriverPtr driver,
                              virDomainObjPtr vm,
                              virDomainSpaprCPUSocketDefPtr spaprcpu)
@@ -4397,59 +4322,34 @@ qemuDomainDetachMemoryDevice(virQEMUDriverPtr driver,
 }
 
 int
-qemuDomainDetachSpaprCPUSocketDevice(virQEMUDriverPtr driver,
+qemuDomainDetachSpaprCPUSocketDeviceHotRemove(virQEMUDriverPtr driver,
                              virDomainObjPtr vm,
-                             virDomainSpaprCPUSocketDefPtr sockdef)
+                             virDomainSpaprCPUSocketDefPtr spaprsockdef)
 {
     qemuDomainObjPrivatePtr priv = vm->privateData;
-    virDomainSpaprCPUSocketDefPtr spaprcpu = NULL;
     int rc;
     int ret = -1;
-    size_t i;
 
-    if (!virQEMUCapsGet(priv->qemuCaps, QEMU_CAPS_DEVICE)) {
-        virReportError(VIR_ERR_OPERATION_INVALID, "%s",
-                       _("qemu does not support -device"));
-        return -1;
-    }
-
-    if (sockdef->idx != vm->def->nspaprcpusockets-1) {
-        virReportError(VIR_ERR_CONFIG_UNSUPPORTED,
-                       _("Non-contiguous socket index '%u' not allowed. Expecting : %zu"),
-                       sockdef->idx, vm->def->nspaprcpusockets-1);
-        return -1;
-    }
-
-    for (i = 0; i < vm->def->nspaprcpusockets; i++) {
-        if (vm->def->spaprcpusockets[i]->idx == sockdef->idx) {
-            spaprcpu = vm->def->spaprcpusockets[i];
-            break;
-        }
-    }
-    if (!spaprcpu) {
-        virReportError(VIR_ERR_OPERATION_INVALID, "%s",
-                       _("device not present in domain configuration"));
-        return -1;
-    }
-
-    if (!spaprcpu->info.alias) {
+    if (!spaprsockdef->info.alias) {
         virReportError(VIR_ERR_INTERNAL_ERROR, "%s",
                        _("alias for the socket device was not found"));
         return -1;
     }
 
-    qemuDomainMarkDeviceForRemoval(vm, &spaprcpu->info);
-
     qemuDomainObjEnterMonitor(driver, vm);
-    rc = qemuMonitorDelDevice(priv->mon, spaprcpu->info.alias);
+
+    qemuDomainMarkDeviceForRemoval(vm, &spaprsockdef->info);
+
+    rc = qemuMonitorDelDevice(priv->mon, spaprsockdef->info.alias);
     if (qemuDomainObjExitMonitor(driver, vm) < 0 || rc < 0)
         goto cleanup;
 
     rc = qemuDomainWaitForDeviceRemoval(vm);
-    if (rc == 0 || rc == 1)
-        ret = qemuDomainRemoveSpaprCPUSocketDevice(driver, vm, spaprcpu);
-    else
+    if (rc == 0 || rc == 1) {
+        ret = qemuDomainRemoveSpaprCPUSocketDevice(driver, vm, spaprsockdef);
+    } else {
         ret = 0;
+    }
 
  cleanup:
     qemuDomainResetDeviceRemoval(vm);

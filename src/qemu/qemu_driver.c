@@ -7910,6 +7910,254 @@ qemuDomainUndefine(virDomainPtr dom)
 }
 
 static int
+qemuDomainDetachSpaprCPUSocketDevice(virQEMUDriverPtr driver,
+                             virDomainObjPtr vm,
+                             virDomainSpaprCPUSocketDefPtr sockdef)
+{
+    qemuDomainObjPrivatePtr priv = vm->privateData;
+    virDomainSpaprCPUSocketDefPtr spaprcpu = NULL;
+    int rc;
+    int ret = -1;
+    size_t i;
+    pid_t *cpupids = NULL;
+    int ncpupids;
+    int oldvcpus, expectedVcpus;
+
+    if (!virQEMUCapsGet(priv->qemuCaps, QEMU_CAPS_DEVICE)) {
+        virReportError(VIR_ERR_OPERATION_INVALID, "%s",
+                       _("qemu does not support -device"));
+        return -1;
+    }
+
+    if (vm->def->nspaprcpusockets == 0) {
+        virReportError(VIR_ERR_OPERATION_INVALID, "%s",
+                       _("No Spapr CPU Sockets present"));
+        return -1;
+    }
+
+    if (sockdef->idx != vm->def->nspaprcpusockets-1) {
+        virReportError(VIR_ERR_CONFIG_UNSUPPORTED,
+                       _("Non-contiguous socket index '%u' not allowed. Expecting : %zu"),
+                       sockdef->idx, vm->def->nspaprcpusockets-1);
+        return -1;
+    }
+
+
+    oldvcpus = vm->def->vcpus;
+    if (vm->def->cpu) {
+        expectedVcpus = vm->def->vcpus - (vm->def->cpu->cores *
+                                          vm->def->cpu->threads);
+    } else {
+        expectedVcpus = vm->def->vcpus - 1;
+    }
+
+    for (i = 0; i < vm->def->nspaprcpusockets; i++) {
+        if (vm->def->spaprcpusockets[i]->idx == sockdef->idx) {
+            spaprcpu = vm->def->spaprcpusockets[i];
+            break;
+        }
+    }
+
+    if (!spaprcpu) {
+        virReportError(VIR_ERR_OPERATION_INVALID, "%s",
+                       _("device not present in domain configuration"));
+        return -1;
+    }
+
+    rc = qemuDomainDetachSpaprCPUSocketDeviceHotRemove(driver, vm, spaprcpu);
+    if (rc < 0)
+        goto cleanup;
+
+    qemuDomainObjEnterMonitor(driver, vm);
+
+    if ((ncpupids = qemuMonitorGetCPUInfo(priv->mon, &cpupids)) <= 0) {
+        virResetLastError();
+        goto exit_monitor;
+    }
+
+    if (qemuDomainObjExitMonitor(driver, vm) < 0) {
+        ret = -1;
+        goto cleanup;
+    }
+
+    if (ncpupids != expectedVcpus) {
+        virReportError(VIR_ERR_OPERATION_FAILED, _("%s. Current %d: Expected %d"),
+                       _("Removed unexpected number of cpus from socket"),
+                       ncpupids, expectedVcpus);
+    }
+
+    for (i = oldvcpus - 1; i >= expectedVcpus; i--) {
+         if (qemuDomainDelCgroupForThread(priv->cgroup,
+                                          VIR_CGROUP_THREAD_VCPU, i) < 0)
+             goto cleanup;
+
+            /* Free vcpupin setting */
+         virDomainPinDel(&vm->def->cputune.vcpupin,
+                         &vm->def->cputune.nvcpupin,
+                         i);
+    }
+
+    ret = 0;
+    vm->def->vcpus = expectedVcpus;
+    priv->nvcpupids = ncpupids;
+    VIR_FREE(priv->vcpupids);
+    priv->vcpupids = cpupids;
+    cpupids = NULL;
+
+ cleanup:
+    virDomainAuditVcpu(vm, oldvcpus, expectedVcpus, "update", rc == 0);
+    VIR_FREE(cpupids);
+    return ret;
+ exit_monitor:
+    ignore_value(qemuDomainObjExitMonitor(driver, vm));
+    goto cleanup;
+}
+
+static int
+qemuDomainAttachSpaprCPUSocketDevice(virQEMUDriverPtr driver,
+                       virDomainObjPtr vm,
+                       virDomainSpaprCPUSocketDefPtr spaprcpu)
+{
+    qemuDomainObjPrivatePtr priv = vm->privateData;
+    virCgroupPtr cgroup_vcpu = NULL;
+    char *devstr = NULL;
+    char *mem_mask = NULL;
+    char *cpualias;
+    pid_t *cpupids = NULL;
+    int ncpupids;
+    int origCpus, expectedCpus;
+    virDomainNumatuneMemMode mem_mode;
+    int rc, ret = -1;
+    size_t i = -1;
+
+    if (spaprcpu->idx != vm->def->nspaprcpusockets) {
+        virReportError(VIR_ERR_CONFIG_UNSUPPORTED,
+                       _("Non-contiguous socket index '%u' not allowed. Expecting : %zu"),
+                       spaprcpu->idx, vm->def->nspaprcpusockets);
+        goto cleanup;
+    }
+
+    origCpus = vm->def->vcpus;
+    if (vm->def->cpu) {
+        expectedCpus = origCpus + vm->def->cpu->cores * vm->def->cpu->threads;
+    } else {
+        expectedCpus = origCpus + 1;
+    }
+
+    if (virAsprintf(&cpualias, "spaprsocket%zu", vm->def->nspaprcpusockets) < 0)
+        goto cleanup;
+
+    spaprcpu->info.alias = cpualias;
+
+    if (virDomainSpaprCPUSocketInsert(vm->def, spaprcpu) < 0)
+        goto cleanup;
+
+    if (!(devstr = qemuBuildSpaprCPUSocketDeviceStr(vm->def->spaprcpusockets[vm->def->nspaprcpusockets-1])))
+        goto cleanup;
+
+    qemuDomainObjEnterMonitor(driver, vm);
+
+    if ((rc = qemuMonitorAddDevice(priv->mon, devstr)) < 0) {
+        virErrorPtr err = virSaveLastError();
+        virSetError(err);
+        virFreeError(err);
+        goto removedef;
+    }
+
+    if ((ncpupids = qemuMonitorGetCPUInfo(priv->mon, &cpupids)) <= 0) {
+        virResetLastError();
+        goto removedef;
+    }
+
+    if (ncpupids != expectedCpus) {
+        virReportError(VIR_ERR_CONFIG_UNSUPPORTED,
+                                       _("Unexpected number of cpus (%d) added as part of socket hotplug"),
+                                                              ncpupids);
+        goto removedef;
+    }
+
+    if (qemuDomainObjExitMonitor(driver, vm) < 0) {
+        spaprcpu = NULL;
+        goto cleanup;
+    }
+
+    spaprcpu = NULL;
+
+    if (virDomainNumatuneGetMode(vm->def->numa, -1, &mem_mode) == 0 &&
+        mem_mode == VIR_DOMAIN_NUMATUNE_MEM_STRICT &&
+        virDomainNumatuneMaybeFormatNodeset(vm->def->numa,
+                                            priv->autoNodeset,
+                                            &mem_mask, -1) < 0)
+        goto cleanup;
+
+    for (i = origCpus; i < expectedCpus; i++) {
+        if (priv->cgroup) {
+                cgroup_vcpu =
+                    qemuDomainAddCgroupForThread(priv->cgroup,
+                                                 VIR_CGROUP_THREAD_VCPU,
+                                                 i, mem_mask,
+                                                 cpupids[i]);
+                if (!cgroup_vcpu)
+                    goto cleanup;
+        }
+
+        /* Inherit def->cpuset */
+        if (vm->def->cpumask) {
+            if (qemuDomainHotplugAddPin(vm->def->cpumask, i,
+                                        &vm->def->cputune.vcpupin,
+                                        &vm->def->cputune.nvcpupin) < 0) {
+                ret = -1;
+                goto cleanup;
+            }
+            if (qemuDomainHotplugPinThread(vm->def->cpumask, i, cpupids[i],
+                                           cgroup_vcpu) < 0) {
+                ret = -1;
+                goto cleanup;
+            }
+        }
+        virCgroupFree(&cgroup_vcpu);
+
+        if (qemuProcessSetSchedParams(i, cpupids[i],
+                                      vm->def->cputune.nvcpusched,
+                                      vm->def->cputune.vcpusched) < 0)
+            goto cleanup;
+    }
+
+    ret = 0;
+    vm->def->vcpus = expectedCpus;
+    virDomainAuditVcpu(vm, origCpus, expectedCpus, "update", rc >= 0);
+    priv->nvcpupids = ncpupids;
+    VIR_FREE(priv->vcpupids);
+    priv->vcpupids = cpupids;
+    cpupids = NULL;
+
+ cleanup:
+    VIR_FREE(cpupids);
+    VIR_FREE(devstr);
+    VIR_FREE(mem_mask);
+    virDomainSpaprCPUSocketDefFree(spaprcpu);
+    if (cgroup_vcpu)
+        virCgroupFree(&cgroup_vcpu);
+    return ret;
+
+ removedef:
+    if (qemuDomainObjExitMonitor(driver, vm) < 0) {
+        spaprcpu = NULL;
+        goto cleanup;
+    }
+
+    for (i = 0; i < vm->def->nspaprcpusockets; i++) {
+        if (vm->def->spaprcpusockets[i] == spaprcpu) {
+            VIR_DELETE_ELEMENT(vm->def->spaprcpusockets, i,
+                               vm->def->nspaprcpusockets);
+            break;
+        }
+    }
+
+    goto cleanup;
+}
+
+static int
 qemuDomainAttachDeviceControllerLive(virQEMUDriverPtr driver,
                                      virDomainObjPtr vm,
                                      virDomainDeviceDefPtr dev)

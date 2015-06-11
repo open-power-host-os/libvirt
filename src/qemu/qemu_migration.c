@@ -3442,6 +3442,19 @@ qemuMigrationPrepareDirect(virQEMUDriverPtr driver,
     return ret;
 }
 
+/* Qemu-ppc counts the spapr-cpu-sockets outside of the current count.
+ * Deduct the vcpus with the hot added count.
+ */
+static void qemuAdjustSpaprSocketCpusToVcpus(virDomainDefPtr def)
+{
+    if (def->cpu) {
+        def->vcpus = def->vcpus - def->nspaprcpusockets *
+                                  def->cpu->cores *
+                                  def->cpu->threads;
+    } else {
+        def->vcpus = def->vcpus - def->nspaprcpusockets;
+    }
+}
 
 virDomainDefPtr
 qemuMigrationPrepareDef(virQEMUDriverPtr driver,
@@ -3473,6 +3486,9 @@ qemuMigrationPrepareDef(virQEMUDriverPtr driver,
             def = NULL;
         }
     }
+
+    if (def && def->nspaprcpusockets)
+        qemuAdjustSpaprSocketCpusToVcpus(def);
 
  cleanup:
     virObjectUnref(caps);
