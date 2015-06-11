@@ -56,5 +56,8 @@ int qemuSetupCgroupVcpuBW(virCgroupPtr cgroup,
 int qemuSetupCgroupCpusetCpus(virCgroupPtr cgroup, virBitmapPtr cpumask);
 int qemuSetupGlobalCpuCgroup(virDomainObjPtr vm);
 int qemuRemoveCgroup(virDomainObjPtr vm);
+int qemuDomainDelCgroupForThread(virCgroupPtr cgroup,
+                             virCgroupThreadName nameval,
+                             int idx);
 
 #endif /* __QEMU_CGROUP_H__ */

@@ -4633,25 +4633,6 @@ static void qemuProcessEventHandler(void *data, void *opaque)
 
 
 static int
-qemuDomainDelCgroupForThread(virCgroupPtr cgroup,
-                             virCgroupThreadName nameval,
-                             int idx)
-{
-    virCgroupPtr new_cgroup = NULL;
-
-    if (cgroup) {
-        if (virCgroupNewThread(cgroup, nameval, idx, false, &new_cgroup) < 0)
-            return -1;
-
-        /* Remove the offlined cgroup */
-        virCgroupRemove(new_cgroup);
-        virCgroupFree(&new_cgroup);
-    }
-
-    return 0;
-}
-
-static int
 qemuDomainHotplugAddVcpu(virQEMUDriverPtr driver,
                          virDomainObjPtr vm,
                          unsigned int vcpu)
@@ -7464,6 +7445,171 @@ static int
 qemuDomainUndefine(virDomainPtr dom)
 {
     return qemuDomainUndefineFlags(dom, 0);
+}
+
+static int
+qemuDomainDetachSpaprCPUSocketDevice(virQEMUDriverPtr driver,
+                             virDomainObjPtr vm,
+                             virDomainSpaprCPUSocketDefPtr sockdef)
+{
+    qemuDomainObjPrivatePtr priv = vm->privateData;
+    virDomainSpaprCPUSocketDefPtr spaprcpu = NULL;
+    int rc;
+    int ret = -1;
+    size_t i;
+    int oldvcpus, expectedVcpus;
+
+    if (!virQEMUCapsGet(priv->qemuCaps, QEMU_CAPS_DEVICE)) {
+        virReportError(VIR_ERR_OPERATION_INVALID, "%s",
+                       _("qemu does not support -device"));
+        return -1;
+    }
+
+    if (vm->def->nspaprcpusockets == 0) {
+        virReportError(VIR_ERR_OPERATION_INVALID, "%s",
+                       _("No Spapr CPU Sockets present"));
+        return -1;
+    }
+
+    if (sockdef->idx != vm->def->nspaprcpusockets-1) {
+        virReportError(VIR_ERR_CONFIG_UNSUPPORTED,
+                       _("Non-contiguous socket index '%u' not allowed. Expecting : %zu"),
+                       sockdef->idx, vm->def->nspaprcpusockets-1);
+        return -1;
+    }
+
+
+    oldvcpus = virDomainDefGetVcpus(vm->def);
+    if (vm->def->cpu) {
+        expectedVcpus = oldvcpus - (vm->def->cpu->cores *
+                                          vm->def->cpu->threads);
+    } else {
+        expectedVcpus = oldvcpus - 1;
+    }
+
+    for (i = 0; i < vm->def->nspaprcpusockets; i++) {
+        if (vm->def->spaprcpusockets[i]->idx == sockdef->idx) {
+            spaprcpu = vm->def->spaprcpusockets[i];
+            break;
+        }
+    }
+
+    if (!spaprcpu) {
+        virReportError(VIR_ERR_OPERATION_INVALID, "%s",
+                       _("device not present in domain configuration"));
+        return -1;
+    }
+
+    rc = qemuDomainDetachSpaprCPUSocketDeviceHotRemove(driver, vm, spaprcpu);
+    if (rc < 0) {
+        virDomainAuditVcpu(vm, oldvcpus, expectedVcpus, "update", false);
+        goto cleanup;
+    }
+
+    ret = 0;
+
+ cleanup:
+    return ret;
+}
+
+static int
+qemuDomainAttachSpaprCPUSocketDevice(virQEMUDriverPtr driver,
+                       virDomainObjPtr vm,
+                       virDomainSpaprCPUSocketDefPtr spaprcpu)
+{
+    qemuDomainObjPrivatePtr priv = vm->privateData;
+    char *devstr = NULL;
+    char *cpualias;
+    int origCpus, expectedCpus;
+    int rc, ret = -1;
+    size_t i = -1;
+    virObjectEventPtr event;
+
+    if (spaprcpu->idx != vm->def->nspaprcpusockets) {
+        virReportError(VIR_ERR_CONFIG_UNSUPPORTED,
+                       _("Non-contiguous socket index '%u' not allowed. Expecting : %zu"),
+                       spaprcpu->idx, vm->def->nspaprcpusockets);
+        goto cleanup;
+    }
+
+    origCpus = virDomainDefGetVcpus(vm->def);
+    if (vm->def->cpu) {
+        expectedCpus = origCpus + vm->def->cpu->cores * vm->def->cpu->threads;
+    } else {
+        expectedCpus = origCpus + 1;
+    }
+
+    if (virAsprintf(&cpualias, "spaprsocket%zu", vm->def->nspaprcpusockets) < 0)
+        goto cleanup;
+
+    spaprcpu->info.alias = cpualias;
+
+    if (virDomainSpaprCPUSocketInsert(vm->def, spaprcpu) < 0)
+        goto cleanup;
+
+    if (!(devstr = qemuBuildSpaprCPUSocketDeviceStr(vm->def->spaprcpusockets[vm->def->nspaprcpusockets-1])))
+        goto cleanup;
+
+    qemuDomainObjEnterMonitor(driver, vm);
+
+    if ((rc = qemuMonitorAddDevice(priv->mon, devstr)) < 0) {
+        virErrorPtr err = virSaveLastError();
+        virSetError(err);
+        virFreeError(err);
+        goto removedef;
+    }
+
+    if (qemuDomainObjExitMonitor(driver, vm) < 0) {
+        spaprcpu = NULL;
+        goto cleanup;
+    }
+
+    event = virDomainEventDeviceAddedNewFromObj(vm, cpualias);
+    qemuDomainEventQueue(driver, event);
+
+    spaprcpu = NULL;
+
+    for (i = origCpus; i < expectedCpus; i++) {
+        virDomainVcpuInfoPtr vcpuinfo = virDomainDefGetVcpu(vm->def, i);
+        vcpuinfo->online = true;
+    }
+
+    if ((rc = qemuDomainDetectVcpuPids(driver, vm, QEMU_ASYNC_JOB_NONE)) <= 0) {
+        /* vcpu pids were not detected, skip setting of affinity */
+        if (rc == 0)
+            ret = 0;
+
+        goto cleanup;
+    }
+
+    for (i = origCpus; i < expectedCpus; i++) {
+        if (qemuProcessSetupVcpu(vm, i) < 0)
+            goto cleanup;
+    }
+
+    ret = 0;
+    virDomainAuditVcpu(vm, origCpus, expectedCpus, "update", rc >= 0);
+
+ cleanup:
+    VIR_FREE(devstr);
+    virDomainSpaprCPUSocketDefFree(spaprcpu);
+    return ret;
+
+ removedef:
+    if (qemuDomainObjExitMonitor(driver, vm) < 0) {
+        spaprcpu = NULL;
+        goto cleanup;
+    }
+
+    for (i = 0; i < vm->def->nspaprcpusockets; i++) {
+        if (vm->def->spaprcpusockets[i] == spaprcpu) {
+            VIR_DELETE_ELEMENT(vm->def->spaprcpusockets, i,
+                               vm->def->nspaprcpusockets);
+            break;
+        }
+    }
+
+    goto cleanup;
 }
 
 static int

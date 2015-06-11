@@ -546,6 +546,25 @@ qemuSetupMemoryCgroup(virDomainObjPtr vm)
     return 0;
 }
 
+int
+qemuDomainDelCgroupForThread(virCgroupPtr cgroup,
+                             virCgroupThreadName nameval,
+                             int idx)
+{
+    virCgroupPtr new_cgroup = NULL;
+
+    if (cgroup) {
+        if (virCgroupNewThread(cgroup, nameval, idx, false, &new_cgroup) < 0)
+            return -1;
+
+        /* Remove the offlined cgroup */
+        virCgroupRemove(new_cgroup);
+        virCgroupFree(&new_cgroup);
+    }
+
+    return 0;
+}
+
 
 static int
 qemuSetupFirmwareCgroup(virDomainObjPtr vm)

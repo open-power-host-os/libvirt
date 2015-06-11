@@ -63,12 +63,15 @@ int qemuDomainAttachMemory(virQEMUDriverPtr driver,
 int qemuDomainDetachMemoryDevice(virQEMUDriverPtr driver,
                                  virDomainObjPtr vm,
                                  virDomainMemoryDefPtr memdef);
-int qemuDomainAttachSpaprCPUSocketDevice(virQEMUDriverPtr driver,
-                           virDomainObjPtr vm,
-                           virDomainSpaprCPUSocketDefPtr mem);
-int qemuDomainDetachSpaprCPUSocketDevice(virQEMUDriverPtr driver,
-                                 virDomainObjPtr vm,
-                                 virDomainSpaprCPUSocketDefPtr memdef);
+int
+qemuDomainRemoveSpaprCPUSocketDevice(virQEMUDriverPtr driver,
+                                     virDomainObjPtr vm,
+                                     virDomainSpaprCPUSocketDefPtr spaprcpu);
+int
+qemuDomainDetachSpaprCPUSocketDeviceHotRemove(virQEMUDriverPtr driver,
+                                              virDomainObjPtr vm,
+                                              virDomainSpaprCPUSocketDefPtr spaprsockdef);
+
 int qemuDomainChangeGraphics(virQEMUDriverPtr driver,
                              virDomainObjPtr vm,
                              virDomainGraphicsDefPtr dev);

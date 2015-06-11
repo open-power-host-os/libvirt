@@ -5150,6 +5150,22 @@ qemuProcessPrepareHost(virQEMUDriverPtr driver,
 }
 
 
+static void
+qemuProcessAdjustVcpusWithSpaprCpuSockets(virDomainObjPtr vm)
+{
+    int originalVcpus = virDomainDefGetVcpus(vm->def);
+
+    if (vm->def->cpu && vm->def->cpu->cores) {
+        originalVcpus = virDomainDefGetVcpus(vm->def) + (vm->def->nspaprcpusockets *
+                                        vm->def->cpu->cores *
+                                        vm->def->cpu->threads);
+    } else {
+        originalVcpus = virDomainDefGetVcpus(vm->def) + vm->def->nspaprcpusockets;
+    }
+    ignore_value(virDomainDefSetVcpus(vm->def, originalVcpus));
+}
+
+
 /**
  * qemuProcessLaunch:
  *
@@ -5393,6 +5409,9 @@ qemuProcessLaunch(virConnectPtr conn,
     VIR_DEBUG("Setting up post-init cgroup restrictions");
     if (qemuSetupCpusetMems(vm) < 0)
         goto cleanup;
+
+    VIR_DEBUG("Adjust the Spapr CPU socket vcpu counts");
+    qemuProcessAdjustVcpusWithSpaprCpuSockets(vm);
 
     VIR_DEBUG("Detecting VCPU PIDs");
     if (qemuDomainDetectVcpuPids(driver, vm, asyncJob) < 0)

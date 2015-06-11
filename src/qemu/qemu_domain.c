@@ -4589,15 +4589,20 @@ qemuDomainDetectVcpuPids(virQEMUDriverPtr driver,
         goto done;
     }
 
-    if (vm->def->cpu) {
-        actualVcpus = virDomainDefGetVcpus(vm->def) + (vm->def->nspaprcpusockets *
-                                        vm->def->cpu->cores *
-                                        vm->def->cpu->threads);
-    } else {
-        actualVcpus = virDomainDefGetVcpus(vm->def) + vm->def->nspaprcpusockets;
+    if ((vm->def->nspaprcpusockets) && (ncpupids != actualVcpus)) {
+        if (asyncJob != QEMU_ASYNC_JOB_NONE) {
+            virReportError(VIR_ERR_CONFIG_UNSUPPORTED, "%s", _("Cannot start guest "                       "with currrent vcpus count leading to incomplete sockets"
+                           " when starting with spapr-cpu-socket attached."));
+            VIR_FREE(cpupids);
+            return -1;
+        } else {
+             virReportError(VIR_ERR_OPERATION_FAILED, _("%s. Current %d: Expected %d"),
+                       _("Removed unexpected number of cpus from socket"),
+                       ncpupids, actualVcpus);
+        }
     }
 
-    if (ncpupids != actualVcpus) {
+    if (ncpupids != actualVcpus && (asyncJob != QEMU_ASYNC_JOB_NONE)) {
         virReportError(VIR_ERR_INTERNAL_ERROR,
                        _("got wrong number of vCPU pids from QEMU monitor. "
                          "got %d, wanted %d"),
