@@ -182,6 +182,7 @@ test_programs = virshtest sockettest \
 	virhostdevtest \
 	vircaps2xmltest \
 	virnetdevtest \
+	virtypedparamtest \
 	$(NULL)
 
 if WITH_REMOTE
@@ -1224,6 +1225,11 @@ objecteventtest_SOURCES = \
 	objecteventtest.c \
 	testutils.c testutils.h
 objecteventtest_LDADD = $(LDADDS)
+
+virtypedparamtest_SOURCES = \
+	virtypedparamtest.c testutils.h testutils.c
+virtypedparamtest_LDADD = $(LDADDS)
+
 
 if WITH_LINUX
 fchosttest_SOURCES = \
