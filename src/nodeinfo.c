@@ -43,6 +43,7 @@
 #include "c-ctype.h"
 #include "viralloc.h"
 #include "nodeinfopriv.h"
+#include "nodeinfo.h"
 #include "physmem.h"
 #include "virerror.h"
 #include "count-one-bits.h"
@@ -423,20 +424,23 @@ CPU_COUNT(cpu_set_t *set)
 /* parses a node entry, returning number of processors in the node and
  * filling arguments */
 static int
-ATTRIBUTE_NONNULL(1) ATTRIBUTE_NONNULL(3)
+ATTRIBUTE_NONNULL(1) ATTRIBUTE_NONNULL(2)
 ATTRIBUTE_NONNULL(4) ATTRIBUTE_NONNULL(5)
-ATTRIBUTE_NONNULL(6)
-virNodeParseNode(const char *node,
+ATTRIBUTE_NONNULL(6) ATTRIBUTE_NONNULL(7)
+virNodeParseNode(const char *sysfs_prefix,
+                 const char *node,
                  virArch arch,
                  int *sockets,
                  int *cores,
                  int *threads,
                  int *offline)
 {
+    const char *prefix = sysfs_prefix ? sysfs_prefix : SYSFS_SYSTEM_PATH;
     int ret = -1;
     int processors = 0;
     DIR *cpudir = NULL;
     struct dirent *cpudirent = NULL;
+    virBitmapPtr present_cpumap = NULL;
     int sock_max = 0;
     cpu_set_t sock_map;
     int sock;
@@ -457,10 +461,15 @@ virNodeParseNode(const char *node,
         goto cleanup;
     }
 
+    present_cpumap = nodeGetPresentCPUBitmap(prefix);
+
     /* enumerate sockets in the node */
     CPU_ZERO(&sock_map);
     while ((direrr = virDirRead(cpudir, &cpudirent, node)) > 0) {
         if (sscanf(cpudirent->d_name, "cpu%u", &cpu) != 1)
+            continue;
+
+        if (present_cpumap && !(virBitmapIsBitSet(present_cpumap, cpu)))
             continue;
 
         if ((online = virNodeGetCpuValue(node, cpu, "online", 1)) < 0)
@@ -494,6 +503,9 @@ virNodeParseNode(const char *node,
     rewinddir(cpudir);
     while ((direrr = virDirRead(cpudir, &cpudirent, node)) > 0) {
         if (sscanf(cpudirent->d_name, "cpu%u", &cpu) != 1)
+            continue;
+
+        if (present_cpumap && !(virBitmapIsBitSet(present_cpumap, cpu)))
             continue;
 
         if ((online = virNodeGetCpuValue(node, cpu, "online", 1)) < 0)
@@ -556,6 +568,7 @@ virNodeParseNode(const char *node,
         ret = -1;
     }
     VIR_FREE(core_maps);
+    virBitmapFree(present_cpumap);
 
     return ret;
 }
@@ -677,7 +690,7 @@ int linuxNodeInfoCPUPopulate(FILE *cpuinfo,
                         sysfs_dir, nodedirent->d_name) < 0)
             goto cleanup;
 
-        if ((cpus = virNodeParseNode(sysfs_cpudir, arch,
+        if ((cpus = virNodeParseNode(sysfs_dir, sysfs_cpudir, arch,
                                      &socks, &cores,
                                      &threads, &offline)) < 0)
             goto cleanup;
@@ -708,7 +721,7 @@ int linuxNodeInfoCPUPopulate(FILE *cpuinfo,
     if (virAsprintf(&sysfs_cpudir, "%s/cpu", sysfs_dir) < 0)
         goto cleanup;
 
-    if ((cpus = virNodeParseNode(sysfs_cpudir, arch,
+    if ((cpus = virNodeParseNode(sysfs_dir, sysfs_cpudir, arch,
                                  &socks, &cores,
                                  &threads, &offline)) < 0)
         goto cleanup;
