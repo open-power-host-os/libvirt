@@ -2029,7 +2029,14 @@ qemuProcessDetectVcpuPIDs(virQEMUDriverPtr driver,
         actualVcpus = virDomainDefGetVcpus(vm->def) + vm->def->nspaprcpusockets;
     }
 
-    if (ncpupids != actualVcpus) {
+    if ((vm->def->nspaprcpusockets) && (ncpupids != actualVcpus)) {
+        virReportError(VIR_ERR_CONFIG_UNSUPPORTED, "%s", _("Cannot start guest "                       "with currrent vcpus count leading to incomplete sockets"
+                       " when starting with spapr-cpu-socket attached."));
+        VIR_FREE(cpupids);
+        return -1;
+    }
+
+    if (ncpupids != actualVcpus)  {
         virReportError(VIR_ERR_INTERNAL_ERROR,
                        _("got wrong number of vCPU pids from QEMU monitor. "
                          "got %d, wanted %d"),
