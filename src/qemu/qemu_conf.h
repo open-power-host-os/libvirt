@@ -250,6 +250,9 @@ struct _virQEMUDriver {
 
     /* Immutable pointer, self-clocking APIs */
     virCloseCallbacksPtr closeCallbacks;
+
+    /* Immutable pointer, self-locking APIs */
+    virHashAtomicPtr migrationErrors;
 };
 
 typedef struct _qemuDomainCmdlineDef qemuDomainCmdlineDef;
