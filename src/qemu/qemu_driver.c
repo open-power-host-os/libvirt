@@ -1424,7 +1424,7 @@ qemuDomainHelperGetVcpus(virDomainObjPtr vm, virVcpuInfoPtr info, int maxinfo,
     size_t i, v;
     qemuDomainObjPrivatePtr priv = vm->privateData;
 
-    if ((hostcpus = nodeGetCPUCount()) < 0)
+    if ((hostcpus = nodeGetCPUCount(NULL)) < 0)
         return -1;
 
     if (priv->vcpupids == NULL) {
@@ -5320,7 +5320,7 @@ qemuDomainGetVcpuPinInfo(virDomainPtr dom,
     /* Coverity didn't realize that targetDef must be set if we got here.  */
     sa_assert(targetDef);
 
-    if ((hostcpus = nodeGetCPUCount()) < 0)
+    if ((hostcpus = nodeGetCPUCount(NULL)) < 0)
         goto cleanup;
 
     /* Clamp to actual number of vcpus */
@@ -5592,7 +5592,7 @@ qemuDomainGetEmulatorPinInfo(virDomainPtr dom,
     /* Coverity didn't realize that targetDef must be set if we got here. */
     sa_assert(targetDef);
 
-    if ((hostcpus = nodeGetCPUCount()) < 0)
+    if ((hostcpus = nodeGetCPUCount(NULL)) < 0)
         goto cleanup;
 
     if (targetDef->cputune.emulatorpin) {
@@ -5794,7 +5794,7 @@ qemuDomainGetIOThreadsLive(virQEMUDriverPtr driver,
         goto endjob;
     }
 
-    if ((hostcpus = nodeGetCPUCount()) < 0)
+    if ((hostcpus = nodeGetCPUCount(NULL)) < 0)
         goto endjob;
 
     if (VIR_ALLOC_N(info_ret, niothreads) < 0)
@@ -5854,7 +5854,7 @@ qemuDomainGetIOThreadsConfig(virDomainDefPtr targetDef,
     if (targetDef->iothreads == 0)
         return 0;
 
-    if ((hostcpus = nodeGetCPUCount()) < 0)
+    if ((hostcpus = nodeGetCPUCount(NULL)) < 0)
         goto cleanup;
 
     if (VIR_ALLOC_N(info_ret, targetDef->iothreads) < 0)

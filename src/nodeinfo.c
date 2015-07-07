@@ -1215,7 +1215,7 @@ int nodeGetMemoryStats(int cellNum ATTRIBUTE_UNUSED,
 }
 
 int
-nodeGetCPUCount(void)
+nodeGetCPUCount(const char *sysfs_prefix ATTRIBUTE_UNUSED)
 {
 #if defined(__linux__)
     /* To support older kernels that lack cpu/present, such as 2.6.18
@@ -1224,21 +1224,27 @@ nodeGetCPUCount(void)
      * will be consecutive.
      */
     char *present_path = NULL;
+    const char *prefix = sysfs_prefix ? sysfs_prefix : SYSFS_SYSTEM_PATH;
     char *cpupath = NULL;
     int ncpu = -1;
 
-    if (!(present_path = linuxGetCPUPresentPath(NULL)))
+    if (!(present_path = linuxGetCPUPresentPath(prefix)))
         return -1;
 
     if (virFileExists(present_path)) {
         ncpu = linuxParseCPUmax(present_path);
-    } else if (virFileExists(SYSFS_SYSTEM_PATH "/cpu/cpu0")) {
+        goto cleanup;
+    }
+
+    if (virAsprintf(&cpupath, "%s/cpu/cpu0", prefix) < 0)
+        goto cleanup;
+    if (virFileExists(cpupath)) {
         ncpu = 0;
         do {
             ncpu++;
             VIR_FREE(cpupath);
             if (virAsprintf(&cpupath, "%s/cpu/cpu%d",
-                            SYSFS_SYSTEM_PATH, ncpu) < 0) {
+                            prefix, ncpu) < 0) {
                 ncpu = -1;
                 goto cleanup;
             }
@@ -1271,7 +1277,7 @@ nodeGetPresentCPUBitmap(void)
     virBitmapPtr bitmap = NULL;
 #endif
 
-    if ((max_present = nodeGetCPUCount()) < 0)
+    if ((max_present = nodeGetCPUCount(NULL)) < 0)
         return NULL;
 
 #ifdef __linux__
@@ -1294,7 +1300,7 @@ nodeGetCPUBitmap(int *max_id ATTRIBUTE_UNUSED)
     virBitmapPtr cpumap;
     int present;
 
-    present = nodeGetCPUCount();
+    present = nodeGetCPUCount(NULL);
     if (present < 0)
         return NULL;
 
@@ -1641,7 +1647,7 @@ nodeGetCPUMap(unsigned char **cpumap,
     virCheckFlags(0, -1);
 
     if (!cpumap && !online)
-        return nodeGetCPUCount();
+        return nodeGetCPUCount(NULL);
 
     if (!(cpus = nodeGetCPUBitmap(&maxpresent)))
         goto cleanup;
