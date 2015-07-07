@@ -120,7 +120,7 @@ parallelsBuildCapabilities(void)
                                       NULL, NULL, 0, NULL) == NULL)
         goto error;
 
-    if (nodeGetInfo(&nodeinfo))
+    if (nodeGetInfo(NULL, &nodeinfo))
         goto error;
 
     if (VIR_ALLOC(cpu) < 0)
@@ -741,7 +741,7 @@ static int
 parallelsNodeGetInfo(virConnectPtr conn ATTRIBUTE_UNUSED,
                      virNodeInfoPtr nodeinfo)
 {
-    return nodeGetInfo(nodeinfo);
+    return nodeGetInfo(NULL, nodeinfo);
 }
 
 static int parallelsConnectIsEncrypted(virConnectPtr conn ATTRIBUTE_UNUSED)
