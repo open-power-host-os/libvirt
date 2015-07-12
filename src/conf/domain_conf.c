@@ -12484,6 +12484,7 @@ virDomainSpaprCPUSocketDefParseXML(xmlNodePtr sockdevNode,
                            unsigned int flags)
 {
     char *idx = NULL;
+    xmlNodePtr save = ctxt->node;
     virDomainSpaprCPUSocketDefPtr def;
 
     ctxt->node = sockdevNode;
@@ -12505,9 +12506,11 @@ virDomainSpaprCPUSocketDefParseXML(xmlNodePtr sockdevNode,
     if (virDomainDeviceInfoParseXML(sockdevNode, NULL, &def->info, flags) < 0)
         goto error;
 
+    ctxt->node = save;
     return def;
 
  error:
+    ctxt->node = save;
     VIR_FREE(idx);
     virDomainSpaprCPUSocketDefFree(def);
     return NULL;
