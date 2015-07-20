@@ -1345,8 +1345,7 @@ nodeGetPresentCPUBitmap(const char *sysfs_prefix ATTRIBUTE_UNUSED)
 }
 
 virBitmapPtr
-nodeGetCPUBitmap(const char *sysfs_prefix ATTRIBUTE_UNUSED,
-                 int *max_id ATTRIBUTE_UNUSED)
+nodeGetCPUBitmap(const char *sysfs_prefix ATTRIBUTE_UNUSED)
 {
 #ifdef __linux__
     const char *prefix = sysfs_prefix ? sysfs_prefix : SYSFS_SYSTEM_PATH;
@@ -1384,8 +1383,7 @@ nodeGetCPUBitmap(const char *sysfs_prefix ATTRIBUTE_UNUSED,
                 ignore_value(virBitmapSetBit(cpumap, i));
         }
     }
-    if (max_id && cpumap)
-        *max_id = present;
+
  cleanup:
     VIR_FREE(online_path);
     VIR_FREE(cpudir);
@@ -1706,7 +1704,6 @@ nodeGetCPUMap(const char *sysfs_prefix,
               unsigned int flags)
 {
     virBitmapPtr cpus = NULL;
-    int maxpresent;
     int ret = -1;
     int dummy;
 
@@ -1715,7 +1712,7 @@ nodeGetCPUMap(const char *sysfs_prefix,
     if (!cpumap && !online)
         return nodeGetCPUCount(sysfs_prefix);
 
-    if (!(cpus = nodeGetCPUBitmap(sysfs_prefix, &maxpresent)))
+    if (!(cpus = nodeGetCPUBitmap(sysfs_prefix)))
         goto cleanup;
 
     if (cpumap && virBitmapToData(cpus, cpumap, &dummy) < 0)
@@ -1723,7 +1720,8 @@ nodeGetCPUMap(const char *sysfs_prefix,
     if (online)
         *online = virBitmapCountBits(cpus);
 
-    ret = maxpresent;
+    ret = virBitmapSize(cpus);
+
  cleanup:
     if (ret < 0 && cpumap)
         VIR_FREE(*cpumap);
