@@ -757,6 +757,13 @@ virHostdevReattachPCIDevice(virPCIDevicePtr dev, virHostdevManagerPtr mgr)
             usleep(100*1000);
             retries--;
         }
+    } else if (STREQ(virPCIDeviceGetStubDriver(dev), "vfio-pci")) {
+        int retries = 100;
+        while (virPCIDeviceWaitForCleanup(dev, "vfio-pci")
+               && retries) {
+            usleep(100*1000);
+            retries--;
+        }
     }
 
     if (virPCIDeviceReattach(dev, mgr->activePCIHostdevs,
