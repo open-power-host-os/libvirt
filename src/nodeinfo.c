@@ -411,12 +411,14 @@ virNodeParseSocket(const char *dir,
 /* parses a node entry, returning number of processors in the node and
  * filling arguments */
 static int
-ATTRIBUTE_NONNULL(1) ATTRIBUTE_NONNULL(2)
+ATTRIBUTE_NONNULL(1) ATTRIBUTE_NONNULL(3)
 ATTRIBUTE_NONNULL(4) ATTRIBUTE_NONNULL(5)
 ATTRIBUTE_NONNULL(6) ATTRIBUTE_NONNULL(7)
-virNodeParseNode(const char *sysfs_prefix,
-                 const char *node,
+ATTRIBUTE_NONNULL(8)
+virNodeParseNode(const char *node,
                  virArch arch,
+                 virBitmapPtr present_cpus_map,
+                 virBitmapPtr online_cpus_map,
                  int *sockets,
                  int *cores,
                  int *threads,
@@ -429,12 +431,10 @@ virNodeParseNode(const char *sysfs_prefix,
     int processors = 0;
     DIR *cpudir = NULL;
     struct dirent *cpudirent = NULL;
-    virBitmapPtr present_cpumap = NULL;
-    virBitmapPtr online_cpus_map = NULL;
     virBitmapPtr node_cpus_map = NULL;
     virBitmapPtr sockets_map = NULL;
     virBitmapPtr *cores_maps = NULL;
-    int npresent_cpus;
+    int npresent_cpus = virBitmapSize(present_cpus_map);
     int sock_max = 0;
     int sock;
     int core;
@@ -452,15 +452,6 @@ virNodeParseNode(const char *sysfs_prefix,
         goto cleanup;
     }
 
-    present_cpumap = nodeGetPresentCPUBitmap(sysfs_prefix);
-    if (!present_cpumap)
-        goto cleanup;
-    online_cpus_map = nodeGetOnlineCPUBitmap(sysfs_prefix);
-    if (!online_cpus_map)
-        goto cleanup;
-
-    npresent_cpus = virBitmapSize(present_cpumap);
-
     /* Keep track of the CPUs that belong to the current node */
     if (!(node_cpus_map = virBitmapNew(npresent_cpus)))
         goto cleanup;
@@ -473,7 +464,7 @@ virNodeParseNode(const char *sysfs_prefix,
         if (sscanf(cpudirent->d_name, "cpu%u", &cpu) != 1)
             continue;
 
-        if (!virBitmapIsBitSet(present_cpumap, cpu))
+        if (!virBitmapIsBitSet(present_cpus_map, cpu))
             continue;
 
         /* Mark this CPU as part of the current node */
@@ -586,8 +577,6 @@ virNodeParseNode(const char *sysfs_prefix,
     VIR_FREE(cores_maps);
     virBitmapFree(sockets_map);
     virBitmapFree(node_cpus_map);
-    virBitmapFree(online_cpus_map);
-    virBitmapFree(present_cpumap);
 
     return ret;
 }
@@ -599,6 +588,8 @@ linuxNodeInfoCPUPopulate(const char *sysfs_prefix,
                          virNodeInfoPtr nodeinfo)
 {
     const char *prefix = sysfs_prefix ? sysfs_prefix : SYSFS_SYSTEM_PATH;
+    virBitmapPtr present_cpus_map = NULL;
+    virBitmapPtr online_cpus_map = NULL;
     char line[1024];
     DIR *nodedir = NULL;
     struct dirent *nodedirent = NULL;
@@ -690,6 +681,15 @@ linuxNodeInfoCPUPopulate(const char *sysfs_prefix,
         }
     }
 
+    /* Get information about what CPUs are present in the host and what
+     * CPUs are online, so that we don't have to so for each node */
+    present_cpus_map = nodeGetPresentCPUBitmap(sysfs_prefix);
+    if (!present_cpus_map)
+        goto cleanup;
+    online_cpus_map = nodeGetOnlineCPUBitmap(sysfs_prefix);
+    if (!online_cpus_map)
+        goto cleanup;
+
     /* OK, we've parsed clock speed out of /proc/cpuinfo. Get the
      * core, node, socket, thread and topology information from /sys
      */
@@ -711,7 +711,9 @@ linuxNodeInfoCPUPopulate(const char *sysfs_prefix,
                         prefix, nodedirent->d_name) < 0)
             goto cleanup;
 
-        if ((cpus = virNodeParseNode(sysfs_prefix, sysfs_cpudir, arch,
+        if ((cpus = virNodeParseNode(sysfs_cpudir, arch,
+                                     present_cpus_map,
+                                     online_cpus_map,
                                      &socks, &cores,
                                      &threads, &offline)) < 0)
             goto cleanup;
@@ -742,7 +744,9 @@ linuxNodeInfoCPUPopulate(const char *sysfs_prefix,
     if (virAsprintf(&sysfs_cpudir, "%s/cpu", prefix) < 0)
         goto cleanup;
 
-    if ((cpus = virNodeParseNode(sysfs_prefix, sysfs_cpudir, arch,
+    if ((cpus = virNodeParseNode(sysfs_cpudir, arch,
+                                 present_cpus_map,
+                                 online_cpus_map,
                                  &socks, &cores,
                                  &threads, &offline)) < 0)
         goto cleanup;
@@ -796,6 +800,8 @@ linuxNodeInfoCPUPopulate(const char *sysfs_prefix,
         ret = -1;
     }
 
+    virBitmapFree(present_cpus_map);
+    virBitmapFree(online_cpus_map);
     VIR_FREE(sysfs_nodedir);
     VIR_FREE(sysfs_cpudir);
     return ret;
