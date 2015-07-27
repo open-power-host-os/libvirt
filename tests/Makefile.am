@@ -410,6 +410,7 @@ test_libraries = libshunload.la \
 		vircgroupmock.la \
 		virpcimock.la \
 		virnetdevmock.la \
+		nodeinfomock.la \
 		$(NULL)
 if WITH_QEMU
 test_libraries += libqemumonitortestutils.la \
@@ -1039,6 +1040,11 @@ virpcimock_la_CFLAGS = $(AM_CFLAGS)
 virpcimock_la_LIBADD = $(GNULIB_LIBS) \
 					   ../src/libvirt.la
 virpcimock_la_LDFLAGS = $(MOCKLIBS_LDFLAGS)
+
+nodeinfomock_la_SOURCES = \
+	nodeinfomock.c
+nodeinfomock_la_CFLAGS = $(AM_CFLAGS)
+nodeinfomock_la_LDFLAGS = $(MOCKLIBS_LDFLAGS)
 
 virnetdevtest_SOURCES = \
 	virnetdevtest.c testutils.h testutils.c
