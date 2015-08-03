@@ -3903,7 +3903,7 @@ qemuMigrationPrepareDirect(virQEMUDriverPtr driver,
  */
 static void qemuAdjustSpaprSocketCpusToVcpus(virDomainDefPtr def)
 {
-    if (def->cpu) {
+    if (def->cpu && def->cpu->cores) {
         ignore_value(virDomainDefSetVcpus(def, virDomainDefGetVcpus(def) - def->nspaprcpusockets *
                                           def->cpu->cores *
                                           def->cpu->threads));

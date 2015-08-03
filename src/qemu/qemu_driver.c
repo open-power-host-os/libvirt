@@ -7715,7 +7715,7 @@ qemuDomainDetachSpaprCPUSocketDevice(virQEMUDriverPtr driver,
 
 
     oldvcpus = virDomainDefGetVcpus(vm->def);
-    if (vm->def->cpu) {
+    if (vm->def->cpu && vm->def->cpu->cores) {
         expectedVcpus = oldvcpus - (vm->def->cpu->cores *
                                           vm->def->cpu->threads);
     } else {
@@ -7809,7 +7809,7 @@ qemuDomainAttachSpaprCPUSocketDevice(virQEMUDriverPtr driver,
     }
 
     origCpus = virDomainDefGetVcpus(vm->def);
-    if (vm->def->cpu) {
+    if (vm->def->cpu && vm->def->cpu->cores) {
         expectedCpus = origCpus + vm->def->cpu->cores * vm->def->cpu->threads;
     } else {
         expectedCpus = origCpus + 1;
