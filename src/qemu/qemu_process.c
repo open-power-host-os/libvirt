@@ -2217,7 +2217,7 @@ qemuProcessDetectVcpuPIDs(virQEMUDriverPtr driver,
         return 0;
     }
 
-    if (vm->def->cpu) {
+    if (vm->def->cpu && vm->def->cpu->cores) {
         actualVcpus = vm->def->vcpus + (vm->def->nspaprcpusockets *
                                         vm->def->cpu->cores *
                                         vm->def->cpu->threads);
