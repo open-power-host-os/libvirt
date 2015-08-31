@@ -11835,6 +11835,7 @@ virDomainMemorySourceDefParseXML(xmlNodePtr node,
 
 static int
 virDomainMemoryTargetDefParseXML(xmlNodePtr node,
+                                 const virDomainDef *domDef,
                                  xmlXPathContextPtr ctxt,
                                  virDomainMemoryDefPtr def)
 {
@@ -11842,7 +11843,7 @@ virDomainMemoryTargetDefParseXML(xmlNodePtr node,
     xmlNodePtr save = ctxt->node;
     ctxt->node = node;
 
-    if (virXPathUInt("string(./node)", ctxt, &def->targetNode) < 0) {
+    if (virXPathUInt("string(./node)", ctxt, &def->targetNode) < 0 && ARCH_IS_X86(domDef->os.arch)) {
         virReportError(VIR_ERR_XML_ERROR, "%s",
                        _("invalid or missing value of memory device node"));
         goto cleanup;
@@ -11899,6 +11900,7 @@ virDomainSpaprCPUSocketDefParseXML(xmlNodePtr sockdevNode,
 
 static virDomainMemoryDefPtr
 virDomainMemoryDefParseXML(xmlNodePtr memdevNode,
+                           const virDomainDef *domDef,
                            xmlXPathContextPtr ctxt,
                            unsigned int flags)
 {
@@ -11937,7 +11939,7 @@ virDomainMemoryDefParseXML(xmlNodePtr memdevNode,
         goto error;
     }
 
-    if (virDomainMemoryTargetDefParseXML(node, ctxt, def) < 0)
+    if (virDomainMemoryTargetDefParseXML(node, domDef, ctxt, def) < 0)
         goto error;
 
     if (virDomainDeviceInfoParseXML(memdevNode, NULL, &def->info, flags) < 0)
@@ -12093,7 +12095,7 @@ virDomainDeviceDefParse(const char *xmlStr,
             goto error;
         break;
     case VIR_DOMAIN_DEVICE_MEMORY:
-        if (!(dev->data.memory = virDomainMemoryDefParseXML(node, ctxt, flags)))
+        if (!(dev->data.memory = virDomainMemoryDefParseXML(node, def, ctxt, flags)))
             goto error;
         break;
     case VIR_DOMAIN_DEVICE_NONE:
@@ -15812,6 +15814,7 @@ virDomainDefParseXML(xmlDocPtr xml,
 
     for (i = 0; i < n; i++) {
         virDomainMemoryDefPtr mem = virDomainMemoryDefParseXML(nodes[i],
+                                                               def,
                                                                ctxt,
                                                                flags);
         if (!mem)
