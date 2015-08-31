@@ -49,6 +49,7 @@
 #define __VIR_CGROUP_ALLOW_INCLUDE_PRIV_H__
 #include "vircgrouppriv.h"
 
+#include "dirname.h"
 #include "virutil.h"
 #include "viralloc.h"
 #include "virerror.h"
@@ -3492,6 +3493,59 @@ virCgroupRemoveRecursively(char *grppath)
 
 
 /**
+ * virCgroupRemoveEmptyParent:
+ *
+ * @group-path: The group path
+ *
+ * Cleanup the libvirt created partition directory if there are no
+ * child group existing. For the given @group-path, find the parent
+ * directory. For resource partition created by libvirt check
+ * existence of child cgroup. Remove the resource partition if no
+ * child cgroup exist.
+ *
+ * Returns: void
+ */
+static void
+virCgroupRemoveEmptyParent(char *grppath)
+{
+    char *parent = NULL, *partition = NULL;
+    struct dirent *ent;
+    DIR *grpdir;
+    int direrr;
+    int is_empty = 1;
+
+    if (!(parent = mdir_name(grppath)))
+        goto cleanup;
+
+    partition = strrchr(parent, '/');
+    if (STRNEQ(partition, "/machine") && STRNEQ(partition, "/machine.slice"))
+        goto cleanup;
+
+    grpdir = opendir(parent);
+    if (grpdir == NULL)
+        goto cleanup;
+
+    while ((direrr = virDirRead(grpdir, &ent, NULL)) > 0) {
+        if (ent->d_name[0] == '.') continue;
+        if (ent->d_type == DT_DIR) {
+            is_empty = 0;
+            break;
+        }
+    }
+    closedir(grpdir);
+
+    if (is_empty) {
+        VIR_DEBUG("Removing empty parent cgroup %s", parent);
+        if (rmdir(parent) != 0)
+            VIR_ERROR(_("Unable to remove %s (%d)"), parent, errno);
+    }
+
+ cleanup:
+    VIR_FREE(parent);
+    return;
+}
+
+/**
  * virCgroupRemove:
  *
  * @group: The group to be removed
@@ -3533,6 +3587,7 @@ virCgroupRemove(virCgroupPtr group)
 
         VIR_DEBUG("Removing cgroup %s and all child cgroups", grppath);
         rc = virCgroupRemoveRecursively(grppath);
+        virCgroupRemoveEmptyParent(grppath);
         VIR_FREE(grppath);
     }
     VIR_DEBUG("Done removing cgroup %s", group->path);
