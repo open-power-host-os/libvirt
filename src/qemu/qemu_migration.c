@@ -3989,6 +3989,7 @@ static void qemuMigrationIOFunc(void *arg)
     if (virStreamFinish(data->st) < 0)
         goto error;
 
+    VIR_FORCE_CLOSE(data->sock);
     VIR_FREE(buffer);
 
     return;
@@ -4006,7 +4007,11 @@ static void qemuMigrationIOFunc(void *arg)
     }
 
  error:
-    virCopyLastError(&data->err);
+    /* Let the source qemu know that the transfer cant continue anymore.
+     * and dont copy the error as the destination has actual error */
+    VIR_FORCE_CLOSE(data->sock);
+    if (!virLastErrorIsSystemErrno(EPIPE))
+        virCopyLastError(&data->err);
     virResetLastError();
     VIR_FREE(buffer);
 }
@@ -4367,7 +4372,6 @@ qemuMigrationRun(virQEMUDriverPtr driver,
     if (spec->fwdType != MIGRATION_FWD_DIRECT) {
         if (iothread && qemuMigrationStopTunnel(iothread, ret < 0) < 0)
             ret = -1;
-        VIR_FORCE_CLOSE(fd);
     }
 
     if (priv->job.completed) {
