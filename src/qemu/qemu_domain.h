@@ -467,4 +467,8 @@ virDomainChrSourceDefPtr qemuFindAgentConfig(virDomainDefPtr def);
 bool qemuDomainMachineIsQ35(const virDomainDef *def);
 bool qemuDomainMachineIsI440FX(const virDomainDef *def);
 
+int qemuDomainDefValidateMemoryHotplug(const virDomainDef *def,
+                                       virQEMUCapsPtr qemuCaps,
+                                       const virDomainMemoryDef *mem);
+
 #endif /* __QEMU_DOMAIN_H__ */
