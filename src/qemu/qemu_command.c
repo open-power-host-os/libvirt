@@ -9019,9 +9019,12 @@ qemuBuildCommandLine(virConnectPtr conn,
     if (virDomainNumaGetNodeCount(def->numa)) {
         if (qemuBuildNumaArgStr(cfg, def, cmd, qemuCaps, nodeset) < 0)
             goto error;
+    }
 
-        /* memory hotplug requires NUMA to be enabled - we already checked
-         * that memory devices are present only when NUMA is */
+    if (!ARCH_IS_X86(def->os.arch) ||
+        (virDomainNumaGetNodeCount(def->numa) > 0)) {
+        /* memory hotplug requires NUMA to be enabled - we checked
+         * that memory devices are present only when NUMA is for x86 */
 
         if (def->nmems > def->mem.memory_slots) {
             virReportError(VIR_ERR_CONFIG_UNSUPPORTED,
