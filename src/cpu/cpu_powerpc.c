@@ -451,6 +451,12 @@ ppcCompare(virCPUDefPtr host,
            virCPUDefPtr cpu,
            bool failIncompatible)
 {
+
+    if ((cpu->arch == VIR_ARCH_NONE ||
+        (ARCH_IS_PPC64(cpu->arch) && ARCH_IS_PPC64(host->arch))) &&
+        STREQLEN(host->model, cpu->model, strlen("POWERx")))
+        return VIR_CPU_COMPARE_IDENTICAL;
+
     if ((cpu->arch == VIR_ARCH_NONE || host->arch == cpu->arch) &&
         STREQ(host->model, cpu->model))
         return VIR_CPU_COMPARE_IDENTICAL;
