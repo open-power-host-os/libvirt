@@ -5039,8 +5039,13 @@ qemuBuildMemoryDeviceStr(virDomainMemoryDefPtr mem,
             return NULL;
         }
 
-        virBufferAsprintf(&buf, "pc-dimm,node=%d,memdev=mem%s,id=%s",
-                          mem->targetNode, mem->info.alias, mem->info.alias);
+        if (virDomainNumaGetNodeCount(def->numa)) {
+            virBufferAsprintf(&buf, "pc-dimm,node=%d,memdev=mem%s,id=%s",
+                              mem->targetNode, mem->info.alias, mem->info.alias);
+        } else {
+            virBufferAsprintf(&buf, "pc-dimm,memdev=mem%s,id=%s",
+                              mem->info.alias, mem->info.alias);
+        }
 
         if (mem->info.type == VIR_DOMAIN_DEVICE_ADDRESS_TYPE_DIMM) {
             if (qemuCheckMemoryDimmConflict(def, mem))
