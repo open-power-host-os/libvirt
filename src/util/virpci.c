@@ -1128,7 +1128,9 @@ static int virPCIDeviceReprobeHostDriver(virPCIDevicePtr dev, char *driver, char
 }
 
 static int
-virPCIDeviceUnbindFromStub(virPCIDevicePtr dev)
+virPCIDeviceUnbindFromStub(virPCIDevicePtr dev,
+                           virPCIDeviceListPtr activeDevs ATTRIBUTE_UNUSED,
+                           virPCIDeviceListPtr inactiveDevs)
 {
     int result = -1;
     char *drvdir = NULL;
@@ -1185,6 +1187,9 @@ virPCIDeviceUnbindFromStub(virPCIDevicePtr dev)
     result = 0;
 
  cleanup:
+    if ((result == 0) && inactiveDevs)
+        virPCIDeviceListDel(inactiveDevs, dev);
+
     /* do not do it again */
     dev->unbind_from_stub = false;
     dev->remove_slot = false;
@@ -1200,7 +1205,9 @@ virPCIDeviceUnbindFromStub(virPCIDevicePtr dev)
 
 static int
 virPCIDeviceBindToStub(virPCIDevicePtr dev,
-                       const char *stubDriverName)
+                       const char *stubDriverName,
+                       virPCIDeviceListPtr activeDevs,
+                       virPCIDeviceListPtr inactiveDevs)
 {
     int result = -1;
     bool reprobe = false;
@@ -1327,9 +1334,15 @@ virPCIDeviceBindToStub(virPCIDevicePtr dev,
     VIR_FREE(driverLink);
     VIR_FREE(path);
 
+    /* Add *a copy of* the dev into list inactiveDevs, if
+     * it's not already there. */
+    if ((result == 0) && inactiveDevs && !virPCIDeviceListFind(inactiveDevs, dev) &&
+        virPCIDeviceListAddCopy(inactiveDevs, dev) < 0) {
+        result = -1;
+    }
     if (result < 0) {
         VIR_FREE(newDriverName);
-        virPCIDeviceUnbindFromStub(dev);
+        virPCIDeviceUnbindFromStub(dev, activeDevs, inactiveDevs);
     } else {
         VIR_FREE(dev->stubDriver);
         dev->stubDriver = newDriverName;
@@ -1376,16 +1389,9 @@ virPCIDeviceDetach(virPCIDevicePtr dev,
         return -1;
     }
 
-    if (virPCIDeviceBindToStub(dev, dev->stubDriver) < 0)
+    if (virPCIDeviceBindToStub(dev, dev->stubDriver,
+                               activeDevs, inactiveDevs) < 0)
         return -1;
-
-    /* Add *a copy of* the dev into list inactiveDevs, if
-     * it's not already there.
-     */
-    if (inactiveDevs && !virPCIDeviceListFind(inactiveDevs, dev) &&
-        virPCIDeviceListAddCopy(inactiveDevs, dev) < 0) {
-        return -1;
-    }
 
     return 0;
 }
@@ -1401,12 +1407,8 @@ virPCIDeviceReattach(virPCIDevicePtr dev,
         return -1;
     }
 
-    if (virPCIDeviceUnbindFromStub(dev) < 0)
+    if (virPCIDeviceUnbindFromStub(dev, activeDevs, inactiveDevs) < 0)
         return -1;
-
-    /* Steal the dev from list inactiveDevs */
-    if (inactiveDevs)
-        virPCIDeviceListDel(inactiveDevs, dev);
 
     return 0;
 }
