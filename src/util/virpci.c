@@ -75,6 +75,7 @@ struct _virPCIDevice {
     bool          has_pm_reset;
     bool          managed;
     char          *stubDriver;
+    int           iommuGroup;
 
     /* used by reattach function */
     bool          unbind_from_stub;
@@ -1565,6 +1566,8 @@ virPCIDeviceNew(unsigned int domain,
     char *product = NULL;
     char *drvpath = NULL;
     char *driver = NULL;
+    virPCIDeviceAddress devAddr = { domain, bus,
+                                    slot, function };
 
     if (VIR_ALLOC(dev) < 0)
         return NULL;
@@ -1612,10 +1615,12 @@ virPCIDeviceNew(unsigned int domain,
         goto error;
     }
 
+    dev->iommuGroup = virPCIDeviceAddressGetIOMMUGroupNum(&devAddr);
+
+    VIR_DEBUG("%s %s: initialized", dev->id, dev->name);
     if (virPCIDeviceGetDriverPathAndName(dev, &drvpath, &driver) < 0)
         goto cleanup;
 
-    VIR_DEBUG("%s %s: initialized", dev->id, dev->name);
     if (!virPCIIsAKnownStub(driver)) {
         VIR_FREE(driver);
         goto cleanup;
