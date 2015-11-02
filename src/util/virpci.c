@@ -1083,6 +1083,23 @@ static const char *virPCIKnownStubs[] = {
     NULL
 };
 
+static bool
+virPCIIsAKnownStub(char *driver)
+{
+    const char **stubTest;
+    bool ret = false;
+
+    for (stubTest = virPCIKnownStubs; *stubTest != NULL; stubTest++) {
+        if (STREQ_NULLABLE(driver, *stubTest)) {
+            ret = true;
+            VIR_DEBUG("Found stub driver %s", *stubTest);
+            break;
+        }
+    }
+
+    return ret;
+}
+
 static int
 virPCIDeviceUnbindFromStub(virPCIDevicePtr dev)
 {
@@ -1090,8 +1107,6 @@ virPCIDeviceUnbindFromStub(virPCIDevicePtr dev)
     char *drvdir = NULL;
     char *path = NULL;
     char *driver = NULL;
-    const char **stubTest;
-    bool isStub = false;
 
     /* If the device is currently bound to one of the "well known"
      * stub drivers, then unbind it, otherwise ignore it.
@@ -1108,14 +1123,7 @@ virPCIDeviceUnbindFromStub(virPCIDevicePtr dev)
         goto remove_slot;
 
     /* If the device isn't bound to a known stub, skip the unbind. */
-    for (stubTest = virPCIKnownStubs; *stubTest != NULL; stubTest++) {
-        if (STREQ(driver, *stubTest)) {
-            isStub = true;
-            VIR_DEBUG("Found stub driver %s", *stubTest);
-            break;
-        }
-    }
-    if (!isStub)
+    if (!virPCIIsAKnownStub(driver))
         goto remove_slot;
 
     if (virPCIDeviceUnbind(dev, dev->reprobe) < 0)
