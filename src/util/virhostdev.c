@@ -1598,6 +1598,7 @@ virHostdevPCINodeDeviceReAttach(virHostdevManagerPtr hostdev_mgr,
                                 virPCIDevicePtr pci)
 {
     virPCIDeviceAddressPtr devAddr = NULL;
+    bool usesVfio = STREQ_NULLABLE(virPCIDeviceGetStubDriver(pci), "vfio-pci");
     struct virHostdevIsPCINodeDeviceUsedData data = {hostdev_mgr, NULL,
                                                      false};
     int ret = -1;
@@ -1608,8 +1609,16 @@ virHostdevPCINodeDeviceReAttach(virHostdevManagerPtr hostdev_mgr,
     if (!(devAddr = virPCIDeviceGetAddress(pci)))
         goto out;
 
-    if (virHostdevIsPCINodeDeviceUsed(devAddr, &data))
+    if (usesVfio) {
+    /* Doesn't matter which function. If any domain is actively using the
+     * iommu group, refuse to reattach */
+        if (virPCIDeviceAddressIOMMUGroupIterate(devAddr,
+                                                 virHostdevIsPCINodeDeviceUsed,
+                                                 &data) < 0)
+            goto out;
+    } else if (virHostdevIsPCINodeDeviceUsed(devAddr, &data)) {
         goto out;
+    }
 
     virPCIDeviceReattachInit(pci);
 
