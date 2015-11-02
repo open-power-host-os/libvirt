@@ -127,6 +127,7 @@ struct pciDevice {
     int vendor;
     int device;
     int class;
+    int iommu;
     struct pciDriver *driver;   /* Driver attached. NULL if attached to no driver */
 };
 
@@ -325,6 +326,7 @@ pci_device_new_from_stub(const struct pciDevice *data)
     char *configSrc;
     char tmp[32];
     struct stat sb;
+    char *iommugrouppath, *deviommupath, *iommugroupdevs = NULL;
 
     if (VIR_STRDUP_QUIET(id, data->id) < 0)
         ABORT_OOM();
@@ -387,6 +389,25 @@ pci_device_new_from_stub(const struct pciDevice *data)
         ABORT("@tmp overflow");
     make_file(devpath, "class", tmp, -1);
 
+    if (virAsprintfQuiet(&deviommupath, "%s/iommu_group", devpath) < 0 ||
+        virAsprintfQuiet(&iommugrouppath, "%s/iommu_groups/%d",
+                         fakesysfsdir, dev->iommu) < 0)
+        ABORT("@deviommupath overflow");
+
+    if (symlink(iommugrouppath, deviommupath) < 0)
+        ABORT("Unable to link device to iommu group");
+
+    VIR_FREE(deviommupath);
+    if (virAsprintfQuiet(&iommugroupdevs, "%s/devices/%s",
+                         iommugrouppath, dev->id) < 0)
+        ABORT("@iommugroupdevs overflow");
+
+    if (symlink(devpath, iommugroupdevs) < 0)
+        ABORT("Unable to link iommu group devices to current device");
+
+    VIR_FREE(iommugrouppath);
+    VIR_FREE(iommugroupdevs);
+
     if (pci_device_autobind(dev) < 0)
         ABORT("Unable to bind: %s", data->id);
 
@@ -435,7 +456,17 @@ pci_device_autobind(struct pciDevice *dev)
     return pci_driver_bind(driver, dev);
 }
 
+static void
+pci_iommu_new(int num)
+{
+    char *iommupath;
 
+    if (virAsprintfQuiet(&iommupath, "%s/iommu_groups/%d/devices", fakesysfsdir, num) < 0)
+        ABORT_OOM();
+
+    if (virFileMakePath(iommupath) < 0)
+        ABORT("Unable to create: %s", iommupath);
+}
 /*
  * PCI Driver functions
  */
@@ -809,6 +840,19 @@ init_env(void)
 
     make_file(fakesysfsdir, "drivers_probe", NULL, -1);
 
+    pci_iommu_new(1);
+    pci_iommu_new(2);
+    pci_iommu_new(3);
+    pci_iommu_new(4);
+    pci_iommu_new(5);
+    pci_iommu_new(6);
+    pci_iommu_new(7);
+    pci_iommu_new(8);
+    pci_iommu_new(9);
+    pci_iommu_new(10);
+    pci_iommu_new(11);
+
+
 # define MAKE_PCI_DRIVER(name, ...)                                     \
     pci_driver_new(name, 0, __VA_ARGS__, -1, -1)
 
@@ -824,20 +868,20 @@ init_env(void)
         pci_device_new_from_stub(&dev);                                 \
     } while (0)
 
-    MAKE_PCI_DEVICE("0000:00:00.0", 0x8086, 0x0044);
-    MAKE_PCI_DEVICE("0000:00:01.0", 0x8086, 0x0044);
-    MAKE_PCI_DEVICE("0000:00:02.0", 0x8086, 0x0046);
-    MAKE_PCI_DEVICE("0000:00:03.0", 0x8086, 0x0048);
-    MAKE_PCI_DEVICE("0001:00:00.0", 0x1014, 0x03b9, .class = 0x060400);
-    MAKE_PCI_DEVICE("0001:01:00.0", 0x8086, 0x105e);
-    MAKE_PCI_DEVICE("0001:01:00.1", 0x8086, 0x105e);
-    MAKE_PCI_DEVICE("0005:80:00.0", 0x10b5, 0x8112, .class = 0x060400);
-    MAKE_PCI_DEVICE("0005:90:01.0", 0x1033, 0x0035);
-    MAKE_PCI_DEVICE("0005:90:01.1", 0x1033, 0x0035);
-    MAKE_PCI_DEVICE("0005:90:01.2", 0x1033, 0x00e0);
-    MAKE_PCI_DEVICE("0000:0a:01.0", 0x8086, 0x0047);
-    MAKE_PCI_DEVICE("0000:0a:02.0", 0x8286, 0x0048);
-    MAKE_PCI_DEVICE("0000:0a:03.0", 0x8386, 0x0048);
+    MAKE_PCI_DEVICE("0000:00:00.0", 0x8086, 0x0044, .iommu = 1);
+    MAKE_PCI_DEVICE("0000:00:01.0", 0x8086, 0x0044, .iommu = 2);
+    MAKE_PCI_DEVICE("0000:00:02.0", 0x8086, 0x0046, .iommu = 3);
+    MAKE_PCI_DEVICE("0000:00:03.0", 0x8086, 0x0048, .iommu = 4);
+    MAKE_PCI_DEVICE("0001:00:00.0", 0x1014, 0x03b9, .iommu = 5, .class = 0x060400);
+    MAKE_PCI_DEVICE("0001:01:00.0", 0x8086, 0x105e, .iommu = 6);
+    MAKE_PCI_DEVICE("0001:01:00.1", 0x8086, 0x105e, .iommu = 6);
+    MAKE_PCI_DEVICE("0005:80:00.0", 0x10b5, 0x8112, .iommu = 7, .class = 0x060400);
+    MAKE_PCI_DEVICE("0005:90:01.0", 0x1033, 0x0035, .iommu = 8);
+    MAKE_PCI_DEVICE("0005:90:01.1", 0x1033, 0x0035, .iommu = 8);
+    MAKE_PCI_DEVICE("0005:90:01.2", 0x1033, 0x00e0, .iommu = 8);
+    MAKE_PCI_DEVICE("0000:0a:01.0", 0x8086, 0x0047, .iommu = 9);
+    MAKE_PCI_DEVICE("0000:0a:02.0", 0x8286, 0x0048, .iommu = 10);
+    MAKE_PCI_DEVICE("0000:0a:03.0", 0x8386, 0x0048, .iommu = 11);
 }
 
 

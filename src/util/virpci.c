@@ -1100,6 +1100,43 @@ virPCIIsAKnownStub(char *driver)
     return ret;
 }
 
+#define VFIO_UNBIND_TIMEOUT 10
+
+/* It is not safe to initiate host driver probe if the vfio driver has not
+ * completely unbound the device.
+ * So, return if the unbind didn't complete in 10 seconds.
+ */
+static int
+virPCIWaitForVFIOUnbindCompletion(virPCIDevicePtr dev)
+{
+    int retry = 0;
+    int ret = -1;
+    char *path = NULL;
+
+    if (!(path = virPCIDeviceGetIOMMUGroupDev(dev)))
+        goto cleanup;
+
+    while (retry++ < VFIO_UNBIND_TIMEOUT) {
+        if (!virFileExists(path))
+            break;
+         sleep(1);
+    }
+
+    if (virFileExists(path)) {
+        virReportError(VIR_ERR_INTERNAL_ERROR,
+                       _("VFIO unbind not completed even after %d seconds"
+                         " for device %s"), retry, dev->name);
+        goto cleanup;
+    }
+
+    ret = 0;
+cleanup :
+    VIR_FREE(path);
+    return ret;
+
+}
+
+
 static int virPCIDeviceReprobeHostDriver(virPCIDevicePtr dev, char *driver, char *drvdir)
 {
     char *path = NULL;
@@ -1273,6 +1310,10 @@ virPCIDeviceUnbindFromStub(virPCIDevicePtr dev,
         /* This device is the last to unbind from vfio. As we explicitly
          * add a missing device in the list to inactiveList, we will just
          * go through the list. */
+
+        if (virPCIWaitForVFIOUnbindCompletion(dev) < 0)
+            goto cleanup;
+
         while (inactiveDevs && (i < virPCIDeviceListCount(inactiveDevs))) {
             virPCIDevicePtr pcidev = virPCIDeviceListGet(inactiveDevs, i);
             if (dev->iommuGroup == pcidev->iommuGroup) {
