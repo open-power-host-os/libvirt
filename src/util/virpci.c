@@ -1128,6 +1128,24 @@ static int virPCIDeviceReprobeHostDriver(virPCIDevicePtr dev, char *driver, char
 }
 
 static int
+virPCIDeviceBoundToVFIODriver(virPCIDeviceAddressPtr devAddr, void *opaque ATTRIBUTE_UNUSED)
+{
+    int ret = 0;
+    virPCIDevicePtr pci = NULL;
+
+    if (!(pci = virPCIDeviceNew(devAddr->domain, devAddr->bus,
+                                devAddr->slot, devAddr->function)))
+        goto cleanup;
+
+    if (STREQ_NULLABLE(pci->stubDriver, "vfio-pci"))
+        ret = -1;
+
+ cleanup:
+    virPCIDeviceFree(pci);
+    return ret;
+}
+
+static int
 virPCIDeviceUnbindFromStub(virPCIDevicePtr dev,
                            virPCIDeviceListPtr activeDevs ATTRIBUTE_UNUSED,
                            virPCIDeviceListPtr inactiveDevs)
@@ -1144,7 +1162,12 @@ virPCIDeviceUnbindFromStub(virPCIDevicePtr dev,
         goto cleanup;
 
     if (!driver) {
-        /* The device is not bound to any driver and we are almost done. */
+        /* This device was probably unbound before and libvirt restared.
+         * Add to the inactive list if not already there so that we
+         * reprobe it if needed.
+         */
+        if (inactiveDevs && !virPCIDeviceListFind(inactiveDevs, dev) &&
+            virPCIDeviceListAddCopy(inactiveDevs, dev) < 0)
         goto reprobe;
     }
 
@@ -1155,9 +1178,67 @@ virPCIDeviceUnbindFromStub(virPCIDevicePtr dev,
     if (!virPCIIsAKnownStub(driver))
         goto remove_slot;
 
-    if (virPCIDeviceUnbind(dev, dev->reprobe) < 0)
-        goto cleanup;
-    dev->unbind_from_stub = false;
+    if (STREQ_NULLABLE(dev->stubDriver, "vfio-pci")) {
+        size_t i = 0;
+        bool inInactiveList = false;
+        virPCIDevicePtr temp;
+        while (activeDevs && (i < virPCIDeviceListCount(activeDevs))) {
+            virPCIDevicePtr pcidev = virPCIDeviceListGet(activeDevs, i);
+            if (dev->iommuGroup == pcidev->iommuGroup) {
+                /* If Part of activelist, deal with current device later */
+                if (inactiveDevs && !virPCIDeviceListFind(inactiveDevs, dev) &&
+                    virPCIDeviceListAddCopy(inactiveDevs, dev) < 0)
+                    goto cleanup;
+                result = 0;
+                goto revisit;
+            }
+            i++;
+        }
+        /* No guests are using any of the devices in the iommu.
+         * This is the first device after guest shutdown/unplug
+         * of all devices. So, rest of the devices are in inactiveDevs.
+         * OR This is the first device after libvirt start and nothing is in
+         * inactiveDevs.
+         * If the device is in inactiveList, mark it as already unbound.
+         */
+        if (virPCIDeviceUnbind(dev, dev->reprobe) < 0)
+            goto cleanup;
+        dev->unbind_from_stub = false;
+        if (inactiveDevs && (temp = virPCIDeviceListFind(inactiveDevs, dev))) {
+            temp->unbind_from_stub = false;
+            inInactiveList = true;
+        }
+
+        /* Unbind rest of the devices in the same iommu group.
+         * After the fresh libvirt start, nothing is detached in the step
+         * as inactiveDevs is empty */
+        i = 0;
+        while (inactiveDevs && (i < virPCIDeviceListCount(inactiveDevs))) {
+            virPCIDevicePtr pcidev = virPCIDeviceListGet(inactiveDevs, i);
+            if (dev->iommuGroup == pcidev->iommuGroup) {
+                if (pcidev->unbind_from_stub &&
+                    virPCIDeviceUnbind(pcidev, pcidev->reprobe) < 0) {
+                    goto cleanup;
+                }
+                pcidev->unbind_from_stub = false;
+            }
+            i++;
+        }
+        /* Libvirt just restarted and inactive list is empty or yet to get into
+         * the list. But no devices used actively from same iommu group.
+         * Basically this could be the first one to unbind from vfio but
+         * could be the last function to be bound to vfio if this is after
+         * libvirt restart.
+         */
+        if (!inInactiveList) {
+            if (inactiveDevs && virPCIDeviceListAddCopy(inactiveDevs, dev) < 0)
+                goto cleanup;
+        }
+    } else {
+        if (virPCIDeviceUnbind(dev, dev->reprobe) < 0)
+            goto cleanup;
+        dev->unbind_from_stub = false;
+    }
 
  remove_slot:
     if (!dev->remove_slot)
@@ -1176,25 +1257,58 @@ virPCIDeviceUnbindFromStub(virPCIDevicePtr dev,
     dev->remove_slot = false;
 
  reprobe:
-    if (!dev->reprobe) {
-        result = 0;
-        goto cleanup;
-    }
 
-    if (virPCIDeviceReprobeHostDriver(dev, driver, drvdir) < 0)
-        goto cleanup;
+    /* For VFIO devices if there is a pending reprobe, the new reattach
+     * request would come with device->stubDriver set to null as the
+     * device is actually unbound. Dont bind to host driver if the
+     * iommu group is in use. */
+    if (!dev->stubDriver ||  STREQ_NULLABLE(dev->stubDriver, "vfio-pci")) {
+        size_t i = 0;
+        virPCIDeviceAddress devAddr = { dev->domain, dev->bus,
+                                        dev->slot, dev->function };
+        if (virPCIDeviceAddressIOMMUGroupIterate(&devAddr, virPCIDeviceBoundToVFIODriver, NULL) < 0) {
+            result = 0;
+            goto cleanup;
+        }
+        /* This device is the last to unbind from vfio. As we explicitly
+         * add a missing device in the list to inactiveList, we will just
+         * go through the list. */
+        while (inactiveDevs && (i < virPCIDeviceListCount(inactiveDevs))) {
+            virPCIDevicePtr pcidev = virPCIDeviceListGet(inactiveDevs, i);
+            if (dev->iommuGroup == pcidev->iommuGroup) {
+                if (pcidev->reprobe &&
+                    virPCIDeviceReprobeHostDriver(pcidev, driver, drvdir) < 0)
+                   goto cleanup;
+                /* Steal the dev from list inactiveDevs */
+                virPCIDeviceListDel(inactiveDevs, pcidev);
+                continue;
+            }
+            i++;
+        }
+        /* If the list was null, we failed to add to the list before.
+         * Reprobe the current device explicitly. */
+        if (!inactiveDevs) {
+             if (dev->reprobe &&
+                 virPCIDeviceReprobeHostDriver(dev, driver, drvdir) < 0)
+                 goto cleanup;
+        }
+    } else {
+        if (virPCIDeviceReprobeHostDriver(dev, driver, drvdir) < 0)
+            goto cleanup;
+
+        if (inactiveDevs)
+            virPCIDeviceListDel(inactiveDevs, dev);
+    }
 
     result = 0;
 
  cleanup:
-    if ((result == 0) && inactiveDevs)
-        virPCIDeviceListDel(inactiveDevs, dev);
-
     /* do not do it again */
     dev->unbind_from_stub = false;
     dev->remove_slot = false;
     dev->reprobe = false;
 
+ revisit:
     VIR_FREE(drvdir);
     VIR_FREE(path);
     VIR_FREE(driver);
