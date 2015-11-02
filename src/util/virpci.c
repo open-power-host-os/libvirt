@@ -1570,6 +1570,8 @@ virPCIDeviceNew(unsigned int domain,
     virPCIDevicePtr dev;
     char *vendor = NULL;
     char *product = NULL;
+    char *drvpath = NULL;
+    char *driver = NULL;
 
     if (VIR_ALLOC(dev) < 0)
         return NULL;
@@ -1616,9 +1618,19 @@ virPCIDeviceNew(unsigned int domain,
         goto error;
     }
 
+    if (virPCIDeviceGetDriverPathAndName(dev, &drvpath, &driver) < 0)
+        goto cleanup;
+
     VIR_DEBUG("%s %s: initialized", dev->id, dev->name);
+    if (!virPCIIsAKnownStub(driver)) {
+        VIR_FREE(driver);
+        goto cleanup;
+    }
+
+    dev->stubDriver = driver;
 
  cleanup:
+    VIR_FREE(drvpath);
     VIR_FREE(product);
     VIR_FREE(vendor);
     return dev;
