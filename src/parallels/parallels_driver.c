@@ -1174,7 +1174,7 @@ parallelsDomainGetMaxMemory(virDomainPtr domain)
     if (!(dom = parallelsDomObjFromDomain(domain)))
         return -1;
 
-    ret = dom->def->mem.max_balloon;
+    ret = virDomainDefGetMemoryActual(dom->def);
     virObjectUnlock(dom);
     return ret;
 }
