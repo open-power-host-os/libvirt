@@ -13519,7 +13519,8 @@ qemuParseCommandLine(virCapsPtr qemuCaps,
     if (virDomainDefAddImplicitControllers(def) < 0)
         goto error;
 
-    if (virDomainDefPostParse(def, qemuCaps, xmlopt) < 0)
+    if (virDomainDefPostParse(def, qemuCaps, VIR_DOMAIN_DEF_PARSE_ABI_UPDATE,
+                              xmlopt) < 0)
         goto error;
 
     if (cmd->num_args || cmd->num_env) {
