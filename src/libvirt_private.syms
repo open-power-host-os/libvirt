@@ -225,6 +225,7 @@ virDomainDefParseFile;
 virDomainDefParseNode;
 virDomainDefParseString;
 virDomainDefPostParse;
+virDomainDefSetMemoryInitial;
 virDomainDefSetMemoryTotal;
 virDomainDeleteConfig;
 virDomainDeviceAddressIsValid;
