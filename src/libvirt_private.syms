@@ -215,6 +215,7 @@ virDomainDefGetMemoryActual;
 virDomainDefGetMemoryInitial;
 virDomainDefGetSecurityLabelDef;
 virDomainDefHasDeviceAddress;
+virDomainDefHasMemoryHotplug;
 virDomainDefMaybeAddController;
 virDomainDefMaybeAddInput;
 virDomainDefNeedsPlacementAdvice;
