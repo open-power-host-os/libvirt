@@ -2514,7 +2514,7 @@ static int testDomainSetMaxMemory(virDomainPtr domain,
     }
 
     /* XXX validate not over host memory wrt to other domains */
-    virDomainDefSetMemoryInitial(privdom->def, memory);
+    virDomainDefSetMemoryTotal(privdom->def, memory);
     ret = 0;
 
  cleanup:

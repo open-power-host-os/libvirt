@@ -3282,7 +3282,7 @@ phypDomainGetXMLDesc(virDomainPtr dom, unsigned int flags)
         goto err;
     }
 
-    virDomainDefSetMemoryInitial(&def, memory);
+    virDomainDefSetMemoryTotal(&def, memory);
 
     if ((def.mem.cur_balloon =
          phypGetLparMem(dom->conn, managed_system, dom->id, 1)) == 0) {

@@ -1410,7 +1410,7 @@ libxlDomainSetMemoryFlags(virDomainPtr dom, unsigned long newmem,
         if (flags & VIR_DOMAIN_MEM_CONFIG) {
             /* Help clang 2.8 decipher the logic flow.  */
             sa_assert(persistentDef);
-            virDomainDefSetMemoryInitial(persistentDef, newmem);
+            virDomainDefSetMemoryTotal(persistentDef, newmem);
             if (persistentDef->mem.cur_balloon > newmem)
                 persistentDef->mem.cur_balloon = newmem;
             ret = virDomainSaveConfig(cfg->configDir, persistentDef);
