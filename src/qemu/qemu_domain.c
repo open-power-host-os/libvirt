@@ -1965,9 +1965,11 @@ qemuDomainDefFormatBuf(virQEMUDriverPtr driver,
                     def->controllers[def->ncontrollers++] = controllers[i];
             }
         }
-
-
     }
+
+    if (ARCH_IS_PPC64(def->os.arch) &&
+        STRPREFIX(def->os.machine, "pseries"))
+        VIR_FREE(def->panic);
 
     ret = virDomainDefFormatInternal(def,
                                      virDomainDefFormatConvertXMLFlags(flags),
