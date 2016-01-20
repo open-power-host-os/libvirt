@@ -4706,12 +4706,8 @@ qemuBuildMemoryBackendStr(unsigned long long size,
     *backendProps = NULL;
     *backendType = NULL;
 
-    /* memory devices could provide a invalid guest node. Moreover,
-     * x86 guests needs at least one numa node to support memory
-     * hotplug
-     */
-    if ((virDomainNumaGetNodeCount(def->numa) == 0 && ARCH_IS_X86(def->os.arch)) ||
-        guestNode > virDomainNumaGetNodeCount(def->numa)) {
+    /* memory devices could provide a invalid guest node */
+    if (guestNode >= virDomainNumaGetNodeCount(def->numa)) {
         virReportError(VIR_ERR_CONFIG_UNSUPPORTED,
                        _("can't add memory backend for guest node '%d' as "
                          "the guest has only '%zu' NUMA nodes configured"),
@@ -4722,12 +4718,10 @@ qemuBuildMemoryBackendStr(unsigned long long size,
     if (!(props = virJSONValueNewObject()))
         return -1;
 
-    if (virDomainNumaGetNodeCount(def->numa)) {
-        memAccess = virDomainNumaGetNodeMemoryAccessMode(def->numa, guestNode);
-        if (virDomainNumatuneGetMode(def->numa, guestNode, &mode) < 0 &&
-            virDomainNumatuneGetMode(def->numa, -1, &mode) < 0)
-            mode = VIR_DOMAIN_NUMATUNE_MEM_STRICT;
-    }
+    memAccess = virDomainNumaGetNodeMemoryAccessMode(def->numa, guestNode);
+    if (virDomainNumatuneGetMode(def->numa, guestNode, &mode) < 0 &&
+        virDomainNumatuneGetMode(def->numa, -1, &mode) < 0)
+        mode = VIR_DOMAIN_NUMATUNE_MEM_STRICT;
 
     if (pagesize == 0) {
         /* Find the huge page size we want to use */
@@ -8981,11 +8975,11 @@ qemuBuildCommandLine(virConnectPtr conn,
             goto error;
         }
 
-        /* x86 windows guest needs at least one numa node to be
-         * present. While its not possible to detect what guest os is
-         * running, enforce this limitation only to x86 architecture.
-         */
-        if (ARCH_IS_X86(def->os.arch) && virDomainNumaGetNodeCount(def->numa) == 0) {
+        /* due to guest support, qemu would silently enable NUMA with one node
+         * once the memory hotplug backend is enabled. To avoid possible
+         * confusion we will enforce user originated numa configuration along
+         * with memory hotplug. */
+        if (virDomainNumaGetNodeCount(def->numa) == 0) {
             virReportError(VIR_ERR_CONFIG_UNSUPPORTED, "%s",
                            _("At least one numa node has to be configured when "
                              "enabling memory hotplug"));
