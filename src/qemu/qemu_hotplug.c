@@ -1749,6 +1749,15 @@ qemuDomainAttachMemory(virQEMUDriverPtr driver,
     if (qemuDomainDefValidateMemoryHotplug(vm->def, priv->qemuCaps, mem) < 0)
         goto cleanup;
 
+    /* This check is masked is qemuBuildMemoryBackendStr() for supporting
+     * 3.1 migrations. Adding it explicitly for new hotplugs. */
+    if ((virDomainNumaGetNodeCount(vm->def->numa) == 0) &&
+        mem->targetNode == 0) {
+        virReportError(VIR_ERR_CONFIG_UNSUPPORTED, "%s",
+                       _("can't add memory backend for guest node '0' as the guest has only '0' NUMA nodes configured"));
+        goto cleanup;
+    }
+
     if (virAsprintf(&mem->info.alias, "dimm%zu", vm->def->nmems) < 0)
         goto cleanup;
 

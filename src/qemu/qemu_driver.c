@@ -8643,6 +8643,15 @@ qemuDomainAttachDeviceConfig(virQEMUCapsPtr qemuCaps,
                            _("no free memory device slot available"));
             return -1;
         }
+        /* This check is masked is qemuBuildMemoryBackendStr() for supporting
+         * 3.1 migrations. Adding it explicitly for new hotplugs. */
+        if ((virDomainNumaGetNodeCount(vmdef->numa) == 0) &&
+            dev->data.memory->targetNode == 0) {
+            virReportError(VIR_ERR_CONFIG_UNSUPPORTED, "%s",
+                           _("can't add memory backend for guest node '0' as the guest has only '0' NUMA nodes configured"));
+
+            return -1;
+        }
 
         if (vmdef->mem.cur_balloon == virDomainDefGetMemoryActual(vmdef))
             vmdef->mem.cur_balloon += dev->data.memory->size;

@@ -8918,6 +8918,33 @@ qemuBuildCommandLine(virConnectPtr conn,
         qemuDomainAlignMemorySizes(def) < 0)
         goto error;
 
+    if (!migrateFrom && !snapshot) {
+        /* Guest start with hotplugged memory for a non-Numa guest
+         * for 3.1 guest xml with hotplugged memory should check
+         * the memory dimms having a target node number. This error is masked
+         * in qemuBuildMemoryBackendStr() to allow migrations for these
+         * guests. */
+        for (i = 0; i < def->nmems; i++) {
+             virDomainMemoryDefPtr tmp = def->mems[i];
+             if (tmp->targetNode == 0 &&
+                 virDomainNumaGetNodeCount(def->numa) == 0) {
+                 virReportError(VIR_ERR_CONFIG_UNSUPPORTED, "%s",
+                                _("can't add memory backend for guest node '0' as the guest has only '0' NUMA nodes configured"));
+                 goto error;
+             }
+        }
+    } else {
+        /* During migrate, auto correct the node numbers to -1 for non-Numa
+         * guests. */
+        for (i = 0; i < def->nmems; i++) {
+             virDomainMemoryDefPtr tmp = def->mems[i];
+             if (tmp->targetNode == 0 &&
+                 virDomainNumaGetNodeCount(def->numa) == 0) {
+                 tmp->targetNode = -1;
+             }
+        }
+    }
+
     if (qemuDomainDefValidateMemoryHotplug(def, qemuCaps, NULL) < 0)
         goto error;
 

@@ -3325,8 +3325,8 @@ qemuDomainMachineIsI440FX(const virDomainDef *def)
             STRPREFIX(def->os.machine, "pc-i440") ||
             STRPREFIX(def->os.machine, "rhel"));
 }
- 
- /**
+
+/**
  * qemuDomainDefValidateMemoryHotplug:
  * @def: domain definition
  * @qemuCaps: qemu capabilities object
@@ -3413,5 +3413,3 @@ qemuDomainDefValidateMemoryHotplug(const virDomainDef *def,
 
     return 0;
 }
-
-

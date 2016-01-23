@@ -3554,6 +3554,7 @@ virDomainDefPostParseMemory(virDomainDefPtr def,
     size_t i;
     unsigned long long numaMemory = 0;
     unsigned long long hotplugMemory = 0;
+    bool pkvm3_1_guest_xml = false;
 
     /* Attempt to infer the initial memory size from the sum NUMA memory sizes
      * in case ABI updates are allowed or the <memory> element wasn't specified */
@@ -3565,8 +3566,14 @@ virDomainDefPostParseMemory(virDomainDefPtr def,
         virDomainDefSetMemoryInitial(def, numaMemory);
     } else {
         /* calculate the sizes of hotplug memory */
-        for (i = 0; i < def->nmems; i++)
+        for (i = 0; i < def->nmems; i++) {
             hotplugMemory += def->mems[i]->size;
+
+            /* This is a non-Numa guest and from 3.1. */
+            if (!pkvm3_1_guest_xml && virDomainNumaGetNodeCount(def->numa) == 0 &&
+                def->mems[i]->targetNode == 0)
+                pkvm3_1_guest_xml = true;
+        }
 
         if (hotplugMemory > def->mem.total_memory) {
             virReportError(VIR_ERR_XML_ERROR, "%s",
@@ -3574,6 +3581,9 @@ virDomainDefPostParseMemory(virDomainDefPtr def,
                              "memory size"));
             return -1;
         }
+
+        if (pkvm3_1_guest_xml)
+           def->mem.total_memory += hotplugMemory;
 
         virDomainDefSetMemoryInitial(def, def->mem.total_memory - hotplugMemory);
     }
@@ -3599,6 +3609,15 @@ virDomainDefPostParseMemory(virDomainDefPtr def,
 
     if (def->mem.max_memory &&
         def->mem.max_memory < virDomainDefGetMemoryActual(def)) {
+        /* Lets error out cleanly during guest start for 3.1 guests */
+        if (pkvm3_1_guest_xml &&
+            (parseFlags & VIR_DOMAIN_DEF_PARSE_INACTIVE ||
+             parseFlags & VIR_DOMAIN_DEF_PARSE_SKIP_OSTYPE_CHECKS)) {
+            /* We will anyway fail later. Restore the original values!*/
+            def->mem.total_memory -= hotplugMemory;
+            virDomainDefSetMemoryInitial(def, def->mem.total_memory - hotplugMemory);
+            return 0;
+        }
         virReportError(VIR_ERR_XML_ERROR, "%s",
                        _("maximum memory size must be equal or greater than "
                          "the actual memory size"));
