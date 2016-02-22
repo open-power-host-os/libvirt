@@ -1090,33 +1090,6 @@ virPCIDeviceUnbind(virPCIDevicePtr dev)
     return ret;
 }
 
-static int virPCIDeviceReprobeHostDriver(virPCIDevicePtr dev, char *driver, char *drvdir)
-{
-    char *path = NULL;
-    int result = -1;
-
-    /* Trigger a re-probe of the device is not in the stub's dynamic
-     * ID table. If the stub is available, but 'remove_id' isn't
-     * available, then re-probing would just cause the device to be
-     * re-bound to the stub.
-     */
-    if (driver && !(path = virPCIDriverFile(driver, "remove_id")))
-        goto cleanup;
-
-    if (!driver || !virFileExists(drvdir) || virFileExists(path)) {
-        if (virFileWriteStr(PCI_SYSFS "drivers_probe", dev->name, 0) < 0) {
-            virReportSystemError(errno,
-                                 _("Failed to trigger a re-probe for PCI device '%s'"),
-                                 dev->name);
-            goto cleanup;
-        }
-    }
-    result = 0;
- cleanup:
-    VIR_FREE(path);
-    return result;
-}
-
 static int
 virPCIDeviceUnbindFromStub(virPCIDevicePtr dev)
 {
@@ -1172,8 +1145,23 @@ virPCIDeviceUnbindFromStub(virPCIDevicePtr dev)
         goto cleanup;
     }
 
-    if (virPCIDeviceReprobeHostDriver(dev, driver, drvdir) < 0)
+    /* Trigger a re-probe of the device is not in the stub's dynamic
+     * ID table. If the stub is available, but 'remove_id' isn't
+     * available, then re-probing would just cause the device to be
+     * re-bound to the stub.
+     */
+    VIR_FREE(path);
+    if (driver && !(path = virPCIDriverFile(driver, "remove_id")))
         goto cleanup;
+
+    if (!driver || !virFileExists(drvdir) || virFileExists(path)) {
+        if (virFileWriteStr(PCI_SYSFS "drivers_probe", dev->name, 0) < 0) {
+            virReportSystemError(errno,
+                                 _("Failed to trigger a re-probe for PCI device '%s'"),
+                                 dev->name);
+            goto cleanup;
+        }
+    }
 
     result = 0;
 
