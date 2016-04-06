@@ -547,6 +547,8 @@ struct _virDomainHostdevCaps {
 /* basic device for direct passthrough */
 struct _virDomainHostdevDef {
     virDomainDeviceDef parent; /* higher level Def containing this */
+    virObjectPtr privateData;
+
     int mode; /* enum virDomainHostdevMode */
     int startupPolicy; /* enum virDomainStartupPolicy */
     bool managed;
@@ -2509,6 +2511,7 @@ struct _virDomainXMLPrivateDataCallbacks {
     virDomainXMLPrivateDataAllocFunc  alloc;
     virDomainXMLPrivateDataFreeFunc   free;
     virDomainXMLPrivateDataNewFunc    diskNew;
+    virDomainXMLPrivateDataNewFunc    hostdevNew;
     virDomainXMLPrivateDataFormatFunc format;
     virDomainXMLPrivateDataParseFunc  parse;
 };
@@ -2586,7 +2589,7 @@ void virDomainMemballoonDefFree(virDomainMemballoonDefPtr def);
 void virDomainNVRAMDefFree(virDomainNVRAMDefPtr def);
 void virDomainWatchdogDefFree(virDomainWatchdogDefPtr def);
 void virDomainVideoDefFree(virDomainVideoDefPtr def);
-virDomainHostdevDefPtr virDomainHostdevDefAlloc(void);
+virDomainHostdevDefPtr virDomainHostdevDefAlloc(virDomainXMLOptionPtr xmlopt);
 void virDomainHostdevDefClear(virDomainHostdevDefPtr def);
 void virDomainHostdevDefFree(virDomainHostdevDefPtr def);
 void virDomainHubDefFree(virDomainHubDefPtr def);

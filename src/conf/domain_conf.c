@@ -2122,15 +2122,31 @@ void virDomainVideoDefFree(virDomainVideoDefPtr def)
     VIR_FREE(def);
 }
 
-virDomainHostdevDefPtr virDomainHostdevDefAlloc(void)
+
+virDomainHostdevDefPtr
+virDomainHostdevDefAlloc(virDomainXMLOptionPtr xmlopt)
 {
     virDomainHostdevDefPtr def = NULL;
 
     if (VIR_ALLOC(def) < 0 ||
-        VIR_ALLOC(def->info) < 0)
+        VIR_ALLOC(def->info) < 0) {
         VIR_FREE(def);
+        return NULL;
+    }
+
+    if (xmlopt &&
+        xmlopt->privateData.hostdevNew &&
+        !(def->privateData = xmlopt->privateData.hostdevNew()))
+        goto error;
+
     return def;
+
+ error:
+    VIR_FREE(def->info);
+    VIR_FREE(def);
+    return NULL;
 }
+
 
 static void
 virDomainHostdevSubsysSCSIiSCSIClear(virDomainHostdevSubsysSCSIiSCSIPtr iscsisrc)
@@ -12234,7 +12250,8 @@ virDomainVideoDefParseXML(xmlNodePtr node,
 }
 
 static virDomainHostdevDefPtr
-virDomainHostdevDefParseXML(xmlNodePtr node,
+virDomainHostdevDefParseXML(virDomainXMLOptionPtr xmlopt,
+                            xmlNodePtr node,
                             xmlXPathContextPtr ctxt,
                             virHashTablePtr bootHash,
                             unsigned int flags)
@@ -12246,7 +12263,7 @@ virDomainHostdevDefParseXML(xmlNodePtr node,
 
     ctxt->node = node;
 
-    if (!(def = virDomainHostdevDefAlloc()))
+    if (!(def = virDomainHostdevDefAlloc(xmlopt)))
         goto error;
 
     if (mode) {
@@ -12933,8 +12950,9 @@ virDomainDeviceDefParse(const char *xmlStr,
             goto error;
         break;
     case VIR_DOMAIN_DEVICE_HOSTDEV:
-        if (!(dev->data.hostdev = virDomainHostdevDefParseXML(node, ctxt,
-                                                              NULL, flags)))
+        if (!(dev->data.hostdev = virDomainHostdevDefParseXML(xmlopt, node,
+                                                              ctxt, NULL,
+                                                              flags)))
             goto error;
         break;
     case VIR_DOMAIN_DEVICE_CONTROLLER:
@@ -16478,7 +16496,8 @@ virDomainDefParseXML(xmlDocPtr xml,
     for (i = 0; i < n; i++) {
         virDomainHostdevDefPtr hostdev;
 
-        hostdev = virDomainHostdevDefParseXML(nodes[i], ctxt, bootHash, flags);
+        hostdev = virDomainHostdevDefParseXML(xmlopt, nodes[i], ctxt,
+                                              bootHash, flags);
         if (!hostdev)
             goto error;
 
