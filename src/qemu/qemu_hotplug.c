@@ -148,7 +148,6 @@ qemuDomainPrepareDisk(virQEMUDriverPtr driver,
 /**
  * qemuDomainChangeEjectableMedia:
  * @driver: qemu driver structure
- * @conn: connection structure
  * @vm: domain definition
  * @disk: disk definition to change the source of
  * @newsrc: new disk source to change to
@@ -163,7 +162,6 @@ qemuDomainPrepareDisk(virQEMUDriverPtr driver,
  */
 int
 qemuDomainChangeEjectableMedia(virQEMUDriverPtr driver,
-                               virConnectPtr conn,
                                virDomainObjPtr vm,
                                virDomainDiskDefPtr disk,
                                virStorageSourcePtr newsrc,
@@ -223,7 +221,9 @@ qemuDomainChangeEjectableMedia(virQEMUDriverPtr driver,
     } while (rc < 0);
 
     if (!virStorageSourceIsEmpty(newsrc)) {
-        if (qemuGetDriveSourceString(newsrc, conn, &sourcestr) < 0)
+        qemuDomainDiskPrivatePtr diskPriv = QEMU_DOMAIN_DISK_PRIVATE(disk);
+
+        if (qemuGetDriveSourceString(newsrc, diskPriv->secinfo, &sourcestr) < 0)
             goto error;
 
         if (virStorageSourceGetActualType(newsrc) != VIR_STORAGE_TYPE_DIR) {
@@ -354,7 +354,10 @@ qemuDomainAttachVirtioDiskDevice(virConnectPtr conn,
     if (qemuAssignDeviceDiskAlias(vm->def, disk, priv->qemuCaps) < 0)
         goto error;
 
-    if (!(drivestr = qemuBuildDriveStr(conn, disk, false, priv->qemuCaps)))
+    if (qemuDomainSecretDiskPrepare(conn, disk) < 0)
+        goto error;
+
+    if (!(drivestr = qemuBuildDriveStr(disk, false, priv->qemuCaps)))
         goto error;
 
     if (!(drivealias = qemuDeviceDriveHostAlias(disk, priv->qemuCaps)))
@@ -396,6 +399,7 @@ qemuDomainAttachVirtioDiskDevice(virConnectPtr conn,
     virDomainDiskInsertPreAlloced(vm->def, disk);
 
  cleanup:
+    qemuDomainSecretDiskDestroy(disk);
     VIR_FREE(devstr);
     VIR_FREE(drivestr);
     VIR_FREE(drivealias);
@@ -559,10 +563,13 @@ qemuDomainAttachSCSIDisk(virConnectPtr conn,
     if (qemuAssignDeviceDiskAlias(vm->def, disk, priv->qemuCaps) < 0)
         goto error;
 
+    if (qemuDomainSecretDiskPrepare(conn, disk) < 0)
+        goto error;
+
     if (!(devstr = qemuBuildDriveDevStr(vm->def, disk, 0, priv->qemuCaps)))
         goto error;
 
-    if (!(drivestr = qemuBuildDriveStr(conn, disk, false, priv->qemuCaps)))
+    if (!(drivestr = qemuBuildDriveStr(disk, false, priv->qemuCaps)))
         goto error;
 
     if (VIR_REALLOC_N(vm->def->disks, vm->def->ndisks+1) < 0)
@@ -593,6 +600,7 @@ qemuDomainAttachSCSIDisk(virConnectPtr conn,
     virDomainDiskInsertPreAlloced(vm->def, disk);
 
  cleanup:
+    qemuDomainSecretDiskDestroy(disk);
     VIR_FREE(devstr);
     VIR_FREE(drivestr);
     virObjectUnref(cfg);
@@ -605,8 +613,7 @@ qemuDomainAttachSCSIDisk(virConnectPtr conn,
 
 
 static int
-qemuDomainAttachUSBMassStorageDevice(virConnectPtr conn,
-                                     virQEMUDriverPtr driver,
+qemuDomainAttachUSBMassStorageDevice(virQEMUDriverPtr driver,
                                      virDomainObjPtr vm,
                                      virDomainDiskDefPtr disk)
 {
@@ -629,7 +636,7 @@ qemuDomainAttachUSBMassStorageDevice(virConnectPtr conn,
 
     if (qemuAssignDeviceDiskAlias(vm->def, disk, priv->qemuCaps) < 0)
         goto error;
-    if (!(drivestr = qemuBuildDriveStr(conn, disk, false, priv->qemuCaps)))
+    if (!(drivestr = qemuBuildDriveStr(disk, false, priv->qemuCaps)))
         goto error;
     if (!(devstr = qemuBuildDriveDevStr(vm->def, disk, 0, priv->qemuCaps)))
         goto error;
@@ -717,7 +724,7 @@ qemuDomainAttachDeviceDiskLive(virConnectPtr conn,
             goto cleanup;
         }
 
-        if (qemuDomainChangeEjectableMedia(driver, conn, vm, orig_disk,
+        if (qemuDomainChangeEjectableMedia(driver, vm, orig_disk,
                                            disk->src, false) < 0)
             goto cleanup;
 
@@ -739,7 +746,7 @@ qemuDomainAttachDeviceDiskLive(virConnectPtr conn,
                                _("disk device='lun' is not supported for usb bus"));
                 break;
             }
-            ret = qemuDomainAttachUSBMassStorageDevice(conn, driver, vm, disk);
+            ret = qemuDomainAttachUSBMassStorageDevice(driver, vm, disk);
             break;
 
         case VIR_DOMAIN_DISK_BUS_VIRTIO:
