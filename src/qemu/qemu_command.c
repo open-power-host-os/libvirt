@@ -50,7 +50,6 @@
 #include "secret_conf.h"
 #include "network/bridge_driver.h"
 #include "virnetdevtap.h"
-#include "secret_util.h"
 #include "device_conf.h"
 #include "virstoragefile.h"
 #include "virtpm.h"
@@ -4489,29 +4488,24 @@ qemuBuildSCSIHostHostdevDrvStr(virDomainHostdevDefPtr dev)
 }
 
 static char *
-qemuBuildSCSIiSCSIHostdevDrvStr(virConnectPtr conn,
-                                virDomainHostdevDefPtr dev)
+qemuBuildSCSIiSCSIHostdevDrvStr(virDomainHostdevDefPtr dev)
 {
     char *source = NULL;
     char *secret = NULL;
     char *username = NULL;
     virStorageSource src;
+    qemuDomainHostdevPrivatePtr hostdevPriv = QEMU_DOMAIN_HOSTDEV_PRIVATE(dev);
 
     memset(&src, 0, sizeof(src));
 
     virDomainHostdevSubsysSCSIPtr scsisrc = &dev->source.subsys.u.scsi;
     virDomainHostdevSubsysSCSIiSCSIPtr iscsisrc = &scsisrc->u.iscsi;
 
-    if (conn && iscsisrc->auth) {
-        const char *protocol =
-            virStorageNetProtocolTypeToString(VIR_STORAGE_NET_PROTOCOL_ISCSI);
-        bool encode = false;
-        int secretType = VIR_SECRET_USAGE_TYPE_ISCSI;
+    if (hostdevPriv->secinfo) {
+        qemuDomainSecretInfoPtr secinfo = hostdevPriv->secinfo;
 
-        username = iscsisrc->auth->username;
-        if (!(secret = virSecretGetSecretString(conn, protocol, encode,
-                                                iscsisrc->auth, secretType)))
-            goto cleanup;
+        username = secinfo->s.plain.username;
+        secret = secinfo->s.plain.secret;
     }
 
     src.protocol = VIR_STORAGE_NET_PROTOCOL_ISCSI;
@@ -4522,14 +4516,11 @@ qemuBuildSCSIiSCSIHostdevDrvStr(virConnectPtr conn,
     /* Rather than pull what we think we want - use the network disk code */
     source = qemuBuildNetworkDriveURI(&src, username, secret);
 
- cleanup:
-    VIR_FREE(secret);
     return source;
 }
 
 char *
-qemuBuildSCSIHostdevDrvStr(virConnectPtr conn,
-                           virDomainHostdevDefPtr dev,
+qemuBuildSCSIHostdevDrvStr(virDomainHostdevDefPtr dev,
                            virQEMUCapsPtr qemuCaps)
 {
     virBuffer buf = VIR_BUFFER_INITIALIZER;
@@ -4537,7 +4528,7 @@ qemuBuildSCSIHostdevDrvStr(virConnectPtr conn,
     virDomainHostdevSubsysSCSIPtr scsisrc = &dev->source.subsys.u.scsi;
 
     if (scsisrc->protocol == VIR_DOMAIN_HOSTDEV_SCSI_PROTOCOL_TYPE_ISCSI) {
-        if (!(source = qemuBuildSCSIiSCSIHostdevDrvStr(conn, dev)))
+        if (!(source = qemuBuildSCSIiSCSIHostdevDrvStr(dev)))
             goto error;
         virBufferAsprintf(&buf, "file=%s,if=none,format=raw", source);
     } else {
@@ -4835,7 +4826,6 @@ qemuBuildChrChardevStr(virLogManagerPtr logManager,
 
 static int
 qemuBuildHostdevCommandLine(virCommandPtr cmd,
-                            virConnectPtr conn,
                             const virDomainDef *def,
                             virQEMUCapsPtr qemuCaps,
                             unsigned int *bootHostdevNet)
@@ -4984,8 +4974,7 @@ qemuBuildHostdevCommandLine(virCommandPtr cmd,
                 char *drvstr;
 
                 virCommandAddArg(cmd, "-drive");
-                if (!(drvstr = qemuBuildSCSIHostdevDrvStr(conn, hostdev,
-                                                          qemuCaps)))
+                if (!(drvstr = qemuBuildSCSIHostdevDrvStr(hostdev, qemuCaps)))
                     return -1;
                 virCommandAddArg(cmd, drvstr);
                 VIR_FREE(drvstr);
@@ -9224,13 +9213,9 @@ qemuBuildCommandLineValidate(virQEMUDriverPtr driver,
 /*
  * Constructs a argv suitable for launching qemu with config defined
  * for a given virtual machine.
- *
- * XXX 'conn' is only required to resolve network -> bridge name
- * figure out how to remove this requirement some day
  */
 virCommandPtr
-qemuBuildCommandLine(virConnectPtr conn,
-                     virQEMUDriverPtr driver,
+qemuBuildCommandLine(virQEMUDriverPtr driver,
                      virLogManagerPtr logManager,
                      virDomainDefPtr def,
                      virDomainChrSourceDefPtr monitor_chr,
@@ -9255,9 +9240,9 @@ qemuBuildCommandLine(virConnectPtr conn,
     unsigned int bootHostdevNet = 0;
 
 
-    VIR_DEBUG("conn=%p driver=%p def=%p mon=%p json=%d "
+    VIR_DEBUG("driver=%p def=%p mon=%p json=%d "
               "qemuCaps=%p migrateURI=%s snapshot=%p vmop=%d",
-              conn, driver, def, monitor_chr, monitor_json,
+              driver, def, monitor_chr, monitor_json,
               qemuCaps, migrateURI, snapshot, vmop);
 
     if (qemuBuildCommandLineValidate(driver, def) < 0)
@@ -9434,7 +9419,7 @@ qemuBuildCommandLine(virConnectPtr conn,
     if (qemuBuildRedirdevCommandLine(logManager, cmd, def, qemuCaps) < 0)
         goto error;
 
-    if (qemuBuildHostdevCommandLine(cmd, conn, def, qemuCaps, &bootHostdevNet) < 0)
+    if (qemuBuildHostdevCommandLine(cmd, def, qemuCaps, &bootHostdevNet) < 0)
         goto error;
 
     if (migrateURI)
