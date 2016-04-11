@@ -1635,6 +1635,7 @@ qemuDomainAttachRNGDevice(virQEMUDriverPtr driver,
 
     if (qemuMonitorAddObject(priv->mon, type, objAlias, props) < 0)
         goto failbackend;
+    props = NULL;
 
     if (qemuMonitorAddDevice(priv->mon, devstr) < 0)
         goto failfrontend;
@@ -1652,6 +1653,7 @@ qemuDomainAttachRNGDevice(virQEMUDriverPtr driver,
  audit:
     virDomainAuditRNG(vm, NULL, rng, "attach", ret == 0);
  cleanup:
+    virJSONValueFree(props);
     if (ret < 0 && vm)
         qemuDomainReleaseDeviceAddress(vm, &rng->info, NULL);
     VIR_FREE(charAlias);
@@ -1665,6 +1667,7 @@ qemuDomainAttachRNGDevice(virQEMUDriverPtr driver,
  failbackend:
     if (rng->backend == VIR_DOMAIN_RNG_BACKEND_EGD)
         ignore_value(qemuMonitorDetachCharDev(priv->mon, charAlias));
+    props = NULL;  /* qemuMonitorAddObject consumes on failure */
  failchardev:
     if (qemuDomainObjExitMonitor(driver, vm) < 0) {
         vm = NULL;
