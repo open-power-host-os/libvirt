@@ -799,7 +799,6 @@ int qemuDomainAttachNetDevice(virConnectPtr conn,
     char *netstr = NULL;
     virNetDevVPortProfilePtr vport = NULL;
     int ret = -1;
-    virDevicePCIAddress guestAddr;
     int vlan;
     bool releaseaddr = false;
     bool iface_connected = false;
@@ -934,10 +933,8 @@ int qemuDomainAttachNetDevice(virConnectPtr conn,
             goto cleanup;
     }
 
-    if (virQEMUCapsGet(priv->qemuCaps, QEMU_CAPS_DEVICE)) {
-        if (qemuAssignDeviceNetAlias(vm->def, net, -1) < 0)
-            goto cleanup;
-    }
+    if (qemuAssignDeviceNetAlias(vm->def, net, -1) < 0)
+        goto cleanup;
 
     if (qemuDomainMachineIsS390CCW(vm->def) &&
         virQEMUCapsGet(priv->qemuCaps, QEMU_CAPS_VIRTIO_CCW)) {
@@ -949,15 +946,13 @@ int qemuDomainAttachNetDevice(virConnectPtr conn,
         virReportError(VIR_ERR_CONFIG_UNSUPPORTED, "%s",
                        _("virtio-s390 net device cannot be hotplugged."));
         goto cleanup;
-    } else if (virQEMUCapsGet(priv->qemuCaps, QEMU_CAPS_DEVICE) &&
-               virDomainPCIAddressEnsureAddr(priv->pciaddrs, &net->info) < 0) {
+    } else if (virDomainPCIAddressEnsureAddr(priv->pciaddrs, &net->info) < 0) {
         goto cleanup;
     }
 
     releaseaddr = true;
 
-    if (virQEMUCapsGet(priv->qemuCaps, QEMU_CAPS_NETDEV) &&
-        virQEMUCapsGet(priv->qemuCaps, QEMU_CAPS_DEVICE)) {
+    if (virQEMUCapsGet(priv->qemuCaps, QEMU_CAPS_NETDEV)) {
         vlan = -1;
     } else {
         vlan = qemuDomainNetVLAN(net);
@@ -983,8 +978,7 @@ int qemuDomainAttachNetDevice(virConnectPtr conn,
             goto cleanup;
     }
 
-    if (virQEMUCapsGet(priv->qemuCaps, QEMU_CAPS_NETDEV) &&
-        virQEMUCapsGet(priv->qemuCaps, QEMU_CAPS_DEVICE)) {
+    if (virQEMUCapsGet(priv->qemuCaps, QEMU_CAPS_NETDEV)) {
         if (!(netstr = qemuBuildHostNetStr(net, driver,
                                            ',', -1,
                                            tapfdName, tapfdSize,
@@ -999,8 +993,7 @@ int qemuDomainAttachNetDevice(virConnectPtr conn,
     }
 
     qemuDomainObjEnterMonitor(driver, vm);
-    if (virQEMUCapsGet(priv->qemuCaps, QEMU_CAPS_NETDEV) &&
-        virQEMUCapsGet(priv->qemuCaps, QEMU_CAPS_DEVICE)) {
+    if (virQEMUCapsGet(priv->qemuCaps, QEMU_CAPS_NETDEV)) {
         if (qemuMonitorAddNetdev(priv->mon, netstr,
                                  tapfd, tapfdName, tapfdSize,
                                  vhostfd, vhostfdName, vhostfdSize) < 0) {
@@ -1025,32 +1018,15 @@ int qemuDomainAttachNetDevice(virConnectPtr conn,
     for (i = 0; i < vhostfdSize; i++)
         VIR_FORCE_CLOSE(vhostfd[i]);
 
-    if (virQEMUCapsGet(priv->qemuCaps, QEMU_CAPS_DEVICE)) {
-        if (!(nicstr = qemuBuildNicDevStr(vm->def, net, vlan, 0,
-                                          vhostfdSize, priv->qemuCaps)))
-            goto try_remove;
-    } else {
-        if (!(nicstr = qemuBuildNicStr(net, NULL, vlan)))
-            goto try_remove;
-    }
+    if (!(nicstr = qemuBuildNicDevStr(vm->def, net, vlan, 0,
+                                      vhostfdSize, priv->qemuCaps)))
+        goto try_remove;
 
     qemuDomainObjEnterMonitor(driver, vm);
-    if (virQEMUCapsGet(priv->qemuCaps, QEMU_CAPS_DEVICE)) {
-        if (qemuMonitorAddDevice(priv->mon, nicstr) < 0) {
-            ignore_value(qemuDomainObjExitMonitor(driver, vm));
-            virDomainAuditNet(vm, NULL, net, "attach", false);
-            goto try_remove;
-        }
-    } else {
-        guestAddr = net->info.addr.pci;
-        if (qemuMonitorAddPCINetwork(priv->mon, nicstr,
-                                     &guestAddr) < 0) {
-            ignore_value(qemuDomainObjExitMonitor(driver, vm));
-            virDomainAuditNet(vm, NULL, net, "attach", false);
-            goto try_remove;
-        }
-        net->info.type = VIR_DOMAIN_DEVICE_ADDRESS_TYPE_PCI;
-        memcpy(&net->info.addr.pci, &guestAddr, sizeof(guestAddr));
+    if (qemuMonitorAddDevice(priv->mon, nicstr) < 0) {
+        ignore_value(qemuDomainObjExitMonitor(driver, vm));
+        virDomainAuditNet(vm, NULL, net, "attach", false);
+        goto try_remove;
     }
     if (qemuDomainObjExitMonitor(driver, vm) < 0)
         goto cleanup;
@@ -1145,8 +1121,7 @@ int qemuDomainAttachNetDevice(virConnectPtr conn,
         goto cleanup;
 
     if (vlan < 0) {
-        if (virQEMUCapsGet(priv->qemuCaps, QEMU_CAPS_NETDEV) &&
-            virQEMUCapsGet(priv->qemuCaps, QEMU_CAPS_DEVICE)) {
+        if (virQEMUCapsGet(priv->qemuCaps, QEMU_CAPS_NETDEV)) {
             char *netdev_name;
             if (virAsprintf(&netdev_name, "host%s", net->info.alias) < 0)
                 goto cleanup;
