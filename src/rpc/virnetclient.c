@@ -1063,9 +1063,9 @@ static int virNetClientCallDispatchStream(virNetClientPtr client)
     VIR_DEBUG("Found call %p", thecall);
 
     /* Status is either
-     *   - REMOTE_OK - no payload for streams
-     *   - REMOTE_ERROR - followed by a remote_error struct
-     *   - REMOTE_CONTINUE - followed by a raw data packet
+     *   - VIR_NET_OK - no payload for streams
+     *   - VIR_NET_ERROR - followed by a remote_error struct
+     *   - VIR_NET_CONTINUE - followed by a raw data packet
      */
     switch (client->msg.header.status) {
     case VIR_NET_CONTINUE: {
@@ -1184,6 +1184,7 @@ virNetClientIOWriteMessage(virNetClientPtr client,
             if (rv == 0) /* Blocking */
                 return 0;
             thecall->msg->donefds++;
+            VIR_FORCE_CLOSE(thecall->msg->fds[i]);
         }
         thecall->msg->donefds = 0;
         thecall->msg->bufferOffset = thecall->msg->bufferLength = 0;

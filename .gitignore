@@ -1,5 +1,7 @@
 *#*#
 *.#*#
+*.[18]
+*.[18].in
 *.a
 *.cov
 *.exe
@@ -57,13 +59,10 @@
 /daemon/libvirt_qemud
 /daemon/libvirtd
 /daemon/libvirtd*.logrotate
-/daemon/libvirtd.8
-/daemon/libvirtd.8.in
 /daemon/libvirtd.init
 /daemon/libvirtd.pod
 /daemon/libvirtd.policy
 /daemon/libvirtd.service
-/daemon/libvirtd.socket
 /daemon/test_libvirtd.aug
 /docs/aclperms.htmlinc
 /docs/apibuild.py.stamp
@@ -156,12 +155,8 @@
 /src/util/virkeymaps.h
 /src/virt-aa-helper
 /src/virtlockd
-/src/virtlockd.8
-/src/virtlockd.8.in
 /src/virtlockd.init
 /src/virtlogd
-/src/virtlogd.8
-/src/virtlogd.8.in
 /src/virtlogd.init
 /tests/*.log
 /tests/*.pid
@@ -176,7 +171,6 @@
 /tests/reconnect
 /tests/ssh
 /tests/test_conf
-/tools/*.[18]
 /tools/libvirt-guests.init
 /tools/libvirt-guests.service
 /tools/libvirt-guests.sh

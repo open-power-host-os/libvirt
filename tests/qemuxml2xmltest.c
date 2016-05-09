@@ -13,7 +13,7 @@
 #ifdef WITH_QEMU
 
 # include "internal.h"
-# include "qemu/qemu_conf.h"
+# include "qemu/qemu_domain_address.h"
 # include "qemu/qemu_domain.h"
 # include "testutilsqemu.h"
 # include "virstring.h"
@@ -54,7 +54,8 @@ testXML2XMLActive(const void *opaque)
 
     return testCompareDomXML2XMLFiles(driver.caps, driver.xmlopt,
                                       info->inName, info->outActiveName, true,
-                                      qemuXML2XMLPreFormatCallback, opaque, 0);
+                                      qemuXML2XMLPreFormatCallback, opaque, 0,
+                                      TEST_COMPARE_DOM_XML2XML_RESULT_SUCCESS);
 }
 
 
@@ -65,7 +66,8 @@ testXML2XMLInactive(const void *opaque)
 
     return testCompareDomXML2XMLFiles(driver.caps, driver.xmlopt, info->inName,
                                       info->outInactiveName, false,
-                                      qemuXML2XMLPreFormatCallback, opaque, 0);
+                                      qemuXML2XMLPreFormatCallback, opaque, 0,
+                                      TEST_COMPARE_DOM_XML2XML_RESULT_SUCCESS);
 }
 
 
@@ -261,6 +263,7 @@ mymain(void)
 {
     int ret = 0;
     struct testInfo info;
+    virQEMUDriverConfigPtr cfg = NULL;
 
     if (qemuTestDriverInit(&driver) < 0)
         return EXIT_FAILURE;
@@ -430,6 +433,7 @@ mymain(void)
     DO_TEST("graphics-vnc-websocket");
     DO_TEST("graphics-vnc-sasl");
     DO_TEST("graphics-vnc-tls");
+    DO_TEST("graphics-vnc-no-listen-attr");
     DO_TEST("graphics-sdl");
     DO_TEST("graphics-sdl-fullscreen");
     DO_TEST("graphics-spice");
@@ -641,6 +645,16 @@ mymain(void)
                  QEMU_CAPS_ICH9_AHCI,
                  QEMU_CAPS_DEVICE_VIDEO_PRIMARY,
                  QEMU_CAPS_VGA_QXL, QEMU_CAPS_DEVICE_QXL);
+    DO_TEST_FULL("pci-expander-bus", WHEN_ACTIVE,
+                 QEMU_CAPS_DEVICE_PCI_BRIDGE,
+                 QEMU_CAPS_DEVICE_PXB);
+    DO_TEST_FULL("pcie-expander-bus", WHEN_ACTIVE,
+                 QEMU_CAPS_DEVICE_PCI_BRIDGE,
+                 QEMU_CAPS_DEVICE_DMI_TO_PCI_BRIDGE,
+                 QEMU_CAPS_DEVICE_IOH3420,
+                 QEMU_CAPS_DEVICE_X3130_UPSTREAM,
+                 QEMU_CAPS_DEVICE_XIO3130_DOWNSTREAM,
+                 QEMU_CAPS_DEVICE_PXB_PCIE);
 
 
     DO_TEST_FULL("hostdev-scsi-lsi", WHEN_ACTIVE,
@@ -761,6 +775,12 @@ mymain(void)
     DO_TEST("virtio-input");
     DO_TEST("virtio-input-passthrough");
 
+    cfg = virQEMUDriverGetConfig(&driver);
+    cfg->vncAutoUnixSocket = true;
+    DO_TEST_FULL("graphics-vnc-autosocket", WHEN_INACTIVE, NONE);
+    cfg->vncAutoUnixSocket = false;
+
+    virObjectUnref(cfg);
     qemuTestDriverFree(&driver);
 
     return ret == 0 ? EXIT_SUCCESS : EXIT_FAILURE;

@@ -1142,5 +1142,7 @@ qemuRemoveCgroup(virDomainObjPtr vm)
             VIR_DEBUG("Failed to terminate cgroup for %s", vm->def->name);
     }
 
+    VIR_FREE(priv->machineName);
+
     return virCgroupRemove(priv->cgroup);
 }
