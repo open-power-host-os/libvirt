@@ -497,8 +497,24 @@ int
 virDomainPCIAddressReleaseAddr(virDomainPCIAddressSetPtr addrs,
                                virPCIDeviceAddressPtr addr)
 {
+    /* permit any kind of connection type in validation, since we
+     * already had it, and are giving it back.
+     */
+    virDomainPCIConnectFlags flags = VIR_PCI_CONNECT_TYPES_MASK;
+    int ret = -1;
+    char *addrStr = NULL;
+
+    if (!(addrStr = virDomainPCIAddressAsString(addr)))
+        goto cleanup;
+
+    if (!virDomainPCIAddressValidate(addrs, addr, addrStr, flags, false))
+        goto cleanup;
+
     addrs->buses[addr->bus].slots[addr->slot] &= ~(1 << addr->function);
-    return 0;
+    ret = 0;
+ cleanup:
+    VIR_FREE(addrStr);
+    return ret;
 }
 
 int
