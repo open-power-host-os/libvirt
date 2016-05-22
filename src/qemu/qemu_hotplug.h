@@ -117,6 +117,11 @@ int qemuDomainDetachRNGDevice(virQEMUDriverPtr driver,
                               virDomainObjPtr vm,
                               virDomainRNGDefPtr rng);
 
+int qemuDomainAttachPCIHostDevicePrepare(virQEMUDriverPtr driver,
+                                         virDomainDefPtr def,
+                                         virDomainHostdevDefPtr dev,
+                                         virQEMUCapsPtr qemuCaps);
+
 int
 qemuDomainChrInsert(virDomainDefPtr vmdef,
                     virDomainChrDefPtr chr);
