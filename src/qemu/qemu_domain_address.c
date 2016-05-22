@@ -1685,7 +1685,7 @@ qemuDomainReleaseDeviceAddress(virDomainObjPtr vm,
                  NULLSTR(devstr));
     else if (info->type == VIR_DOMAIN_DEVICE_ADDRESS_TYPE_PCI &&
              virQEMUCapsGet(priv->qemuCaps, QEMU_CAPS_DEVICE) &&
-             virDomainPCIAddressReleaseSlot(priv->pciaddrs,
+             virDomainPCIAddressReleaseAddr(priv->pciaddrs,
                                             &info->addr.pci) < 0)
         VIR_WARN("Unable to release PCI address on %s",
                  NULLSTR(devstr));

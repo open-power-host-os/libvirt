@@ -98,6 +98,7 @@ virDomainPCIAddressBusSetModel;
 virDomainPCIAddressEnsureAddr;
 virDomainPCIAddressFlagsCompatible;
 virDomainPCIAddressGetNextSlot;
+virDomainPCIAddressReleaseAddr;
 virDomainPCIAddressReleaseSlot;
 virDomainPCIAddressReserveAddr;
 virDomainPCIAddressReserveNextSlot;
