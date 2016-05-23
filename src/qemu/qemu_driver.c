@@ -8440,8 +8440,13 @@ static int qemuDomainAttachDeviceFlags(virDomainPtr dom, const char *xml,
                                          VIR_DOMAIN_DEVICE_ACTION_ATTACH) < 0)
             goto endjob;
 
-        if ((ret = qemuDomainAttachDeviceLive(vm, dev_copy, dom)) < 0)
+        if (dev_copy->type == VIR_DOMAIN_DEVICE_HOSTDEV &&
+            dev_copy->data.hostdev->source.subsys.type == VIR_DOMAIN_HOSTDEV_SUBSYS_TYPE_PCI &&
+            qemuDomainAttachPCIHostDevicePrepare(driver, vm->def, dev_copy->data.hostdev, qemuCaps) < 0)
             goto endjob;
+
+        if ((ret = qemuDomainAttachDeviceLive(vm, dev_copy, dom)) < 0)
+            goto undoprepare;
         /*
          * update domain status forcibly because the domain status may be
          * changed even if we failed to attach the device. For example,
@@ -8476,6 +8481,12 @@ static int qemuDomainAttachDeviceFlags(virDomainPtr dom, const char *xml,
     virObjectUnref(cfg);
     virNWFilterUnlockFilterUpdates();
     return ret;
+
+ undoprepare:
+    if (dev_copy->type == VIR_DOMAIN_DEVICE_HOSTDEV &&
+        dev_copy->data.hostdev->source.subsys.type == VIR_DOMAIN_HOSTDEV_SUBSYS_TYPE_PCI)
+        qemuHostdevReAttachPCIDevices(driver, vm->def->name, &dev_copy->data.hostdev, 1);
+    goto endjob;
 }
 
 static int qemuDomainAttachDevice(virDomainPtr dom, const char *xml)
