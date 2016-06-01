@@ -624,7 +624,10 @@ virDomainPCIAddressReleaseAddr(virDomainPCIAddressSetPtr addrs,
     if (!virDomainPCIAddressValidate(addrs, addr, addrStr, flags, false))
         goto cleanup;
 
-    addrs->buses[addr->bus].slots[addr->slot] &= ~(1 << addr->function);
+    if ((addr->multi == VIR_TRISTATE_SWITCH_ABSENT) && (addr->function == 0))
+        addrs->buses[addr->bus].slots[addr->slot] = 0;
+    else
+        addrs->buses[addr->bus].slots[addr->slot] &= ~(1 << addr->function);
     ret = 0;
  cleanup:
     VIR_FREE(addrStr);
