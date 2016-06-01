@@ -1009,7 +1009,7 @@ virNetDevMacVLanCreateWithVPortProfile(const char *ifnameRequested,
      * emulate their switch in firmware.
      */
     if (mode == VIR_NETDEV_MACVLAN_MODE_PASSTHRU) {
-        if (virNetDevReplaceNetConfig(linkdev, -1, macaddress, -1, stateDir) < 0)
+        if (virNetDevReplaceMacAddress(linkdev, macaddress, stateDir) < 0)
             return -1;
     }
 
@@ -1190,7 +1190,7 @@ int virNetDevMacVLanDeleteWithVPortProfile(const char *ifname,
     }
 
     if (mode == VIR_NETDEV_MACVLAN_MODE_PASSTHRU)
-        ignore_value(virNetDevRestoreNetConfig(linkdev, vf, stateDir));
+        ignore_value(virNetDevRestoreMacAddress(linkdev, stateDir));
 
     virNetlinkEventRemoveClient(0, macaddr, NETLINK_ROUTE);
 

@@ -2470,8 +2470,7 @@ virNetDevReplaceVfConfig(const char *pflinkdev, int vf,
 }
 
 static int
-virNetDevRestoreVfConfig(const char *pflinkdev,
-                         int vf, const char *vflinkdev,
+virNetDevRestoreVfConfig(const char *pflinkdev, int vf,
                          const char *stateDir)
 {
     int rc = -1;
@@ -2485,17 +2484,6 @@ virNetDevRestoreVfConfig(const char *pflinkdev,
     if (virAsprintf(&path, "%s/%s_vf%d",
                     stateDir, pflinkdev, vf) < 0)
         return rc;
-
-    if (vflinkdev && !virFileExists(path)) {
-        /* this VF's config may have been stored with
-         * virNetDevReplaceMacAddress while running an older version
-         * of libvirt. If so, the ${pf}_vf${id} file won't exist. In
-         * that case, try to restore using the older method with the
-         * VF's name directly.
-         */
-        rc = virNetDevRestoreMacAddress(vflinkdev, stateDir);
-        goto cleanup;
-    }
 
     if (virFileReadAll(path, 128, &fileData) < 0)
         goto cleanup;
@@ -2550,31 +2538,11 @@ virNetDevReplaceNetConfig(const char *linkdev, int vf,
                           const virMacAddr *macaddress, int vlanid,
                           const char *stateDir)
 {
-    int ret = -1;
-    char *pfdevname = NULL;
-
-    if (vf == -1 && virNetDevIsVirtualFunction(linkdev) == 1) {
-        /* If this really *is* a VF and the caller just didn't know
-         * it, we should set the MAC address via PF+vf# instead of
-         * setting directly via VF, because the latter will be
-         * rejected any time after the former has been done.
-         */
-        if (virNetDevGetPhysicalFunction(linkdev, &pfdevname) < 0)
-            goto cleanup;
-        if (virNetDevGetVirtualFunctionIndex(pfdevname, linkdev, &vf) < 0)
-            goto cleanup;
-        linkdev = pfdevname;
-    }
-
     if (vf == -1)
-        ret = virNetDevReplaceMacAddress(linkdev, macaddress, stateDir);
+        return virNetDevReplaceMacAddress(linkdev, macaddress, stateDir);
     else
-        ret = virNetDevReplaceVfConfig(linkdev, vf, macaddress, vlanid,
-                                       stateDir);
-
- cleanup:
-    VIR_FREE(pfdevname);
-    return ret;
+        return virNetDevReplaceVfConfig(linkdev, vf, macaddress, vlanid,
+                                        stateDir);
 }
 
 /**
@@ -2589,32 +2557,10 @@ virNetDevReplaceNetConfig(const char *linkdev, int vf,
 int
 virNetDevRestoreNetConfig(const char *linkdev, int vf, const char *stateDir)
 {
-    int ret = -1;
-    char *pfdevname = NULL;
-    const char *vfdevname = NULL;
-
-    if (vf == -1 && virNetDevIsVirtualFunction(linkdev) == 1) {
-        /* If this really *is* a VF and the caller just didn't know
-         * it, we should set the MAC address via PF+vf# instead of
-         * setting directly via VF, because the latter will be
-         * rejected any time after the former has been done.
-         */
-        if (virNetDevGetPhysicalFunction(linkdev, &pfdevname) < 0)
-            goto cleanup;
-        if (virNetDevGetVirtualFunctionIndex(pfdevname, linkdev, &vf) < 0)
-            goto cleanup;
-        vfdevname = linkdev;
-        linkdev = pfdevname;
-    }
-
     if (vf == -1)
-        ret = virNetDevRestoreMacAddress(linkdev, stateDir);
+        return virNetDevRestoreMacAddress(linkdev, stateDir);
     else
-        ret = virNetDevRestoreVfConfig(linkdev, vf, vfdevname, stateDir);
-
- cleanup:
-    VIR_FREE(pfdevname);
-    return ret;
+        return virNetDevRestoreVfConfig(linkdev, vf, stateDir);
 }
 
 #else /* defined(__linux__) && defined(HAVE_LIBNL) */
