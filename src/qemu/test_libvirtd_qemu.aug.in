@@ -67,7 +67,6 @@ module Test_libvirtd_qemu =
 { "max_queued" = "0" }
 { "keepalive_interval" = "5" }
 { "keepalive_count" = "5" }
-{ "seccomp_sandbox" = "1" }
 { "migration_address" = "0.0.0.0" }
 { "migration_host" = "host.example.com" }
 { "migration_port_min" = "49152" }
