@@ -877,6 +877,36 @@ virDomainXMLOptionClassDispose(void *obj)
         (xmlopt->config.privFree)(xmlopt->config.priv);
 }
 
+/* virDomainDeviceDefListAddCopy - add a *copy* of the device to this list */
+int
+virDomainDeviceDefListAddCopy(virDomainDeviceDefListPtr list,
+                              virDomainDeviceDefPtr dev,
+                              const virDomainDef *def,
+                              virCapsPtr caps,
+                              virDomainXMLOptionPtr xmlopt)
+{
+    virDomainDeviceDefPtr copy = virDomainDeviceDefCopy(dev, def, caps, xmlopt);
+
+    if (!copy)
+        return -1;
+    if (VIR_APPEND_ELEMENT(list->devs, list->count, copy) < 0) {
+        virDomainDeviceDefFree(copy);
+        return -1;
+    }
+    return 0;
+}
+
+void virDomainDeviceDefListFree(virDomainDeviceDefListPtr list)
+{
+    size_t i;
+
+    if (!list)
+        return;
+    for (i = 0; i < list->count; i++)
+        virDomainDeviceDefFree(list->devs[i]);
+    VIR_FREE(list);
+}
+
 /**
  * virDomainKeyWrapCipherDefParseXML:
  *
@@ -13308,7 +13338,6 @@ virDomainMemoryDefParseXML(xmlNodePtr memdevNode,
     return NULL;
 }
 
-
 static virDomainIOMMUDefPtr
 virDomainIOMMUDefParseXML(xmlNodePtr node)
 {
@@ -13341,25 +13370,16 @@ virDomainIOMMUDefParseXML(xmlNodePtr node)
     return ret;
 }
 
-
-virDomainDeviceDefPtr
-virDomainDeviceDefParse(const char *xmlStr,
-                        const virDomainDef *def,
-                        virCapsPtr caps,
-                        virDomainXMLOptionPtr xmlopt,
-                        unsigned int flags)
+static
+virDomainDeviceDefPtr virDomainDeviceDefParseXML(xmlNodePtr node,
+                                                 const virDomainDef *def,
+                                                 virCapsPtr caps,
+                                                 virDomainXMLOptionPtr xmlopt,
+                                                 xmlXPathContextPtr ctxt,
+                                                 unsigned int flags)
 {
-    xmlDocPtr xml;
-    xmlNodePtr node;
-    xmlXPathContextPtr ctxt = NULL;
     virDomainDeviceDefPtr dev = NULL;
     char *netprefix;
-
-    if (!(xml = virXMLParseStringCtxt(xmlStr, _("(device_definition)"), &ctxt)))
-        goto error;
-
-    node = ctxt->node;
-
     if (VIR_ALLOC(dev) < 0)
         goto error;
 
@@ -13500,14 +13520,33 @@ virDomainDeviceDefParse(const char *xmlStr,
     if (virDomainDeviceDefValidate(dev, def, flags, xmlopt) < 0)
         goto error;
 
- cleanup:
+    return dev;
+ error:
+    return NULL;
+}
+
+virDomainDeviceDefPtr
+virDomainDeviceDefParse(const char *xmlStr,
+                        const virDomainDef *def,
+                        virCapsPtr caps,
+                        virDomainXMLOptionPtr xmlopt,
+                        unsigned int flags)
+{
+    xmlDocPtr xml;
+    xmlNodePtr node;
+    xmlXPathContextPtr ctxt = NULL;
+    virDomainDeviceDefPtr dev = NULL;
+
+    if (!(xml = virXMLParseStringCtxt(xmlStr, _("(device_definition)"), &ctxt)))
+        return NULL;
+
+    node = ctxt->node;
+
+    dev = virDomainDeviceDefParseXML(node, def, caps, xmlopt, ctxt, flags);
+
     xmlFreeDoc(xml);
     xmlXPathFreeContext(ctxt);
     return dev;
-
- error:
-    VIR_FREE(dev);
-    goto cleanup;
 }
 
 
@@ -25380,4 +25419,45 @@ virDomainGetBlkioParametersAssignFromDef(virDomainDefPtr def,
     VIR_FREE(data);
     virBufferFreeAndReset(&buf);
     return -1;
+}
+
+
+virDomainDeviceDefListPtr
+virDomainDeviceDefParseXMLMany(const char *xml,
+                               const virDomainDef *def,
+                               virCapsPtr caps,
+                               virDomainXMLOptionPtr xmlopt,
+                               unsigned int flags)
+{
+    xmlXPathContextPtr ctxt = NULL;
+    xmlDocPtr xmlPtr;
+    xmlNodePtr node, root;
+    virDomainDeviceDefPtr dev = NULL;
+    virDomainDeviceDefListPtr devlist;
+
+    if (!(xmlPtr = virXMLParseStringCtxt(xml, _("(device_definition)"), &ctxt)))
+        return NULL;
+
+    if (VIR_ALLOC(devlist) < 0)
+         goto exit;
+
+    root = xmlDocGetRootElement(xmlPtr);
+    node = root->children;
+    while (node) {
+        if (node->type == XML_ELEMENT_NODE) {
+            dev = virDomainDeviceDefParseXML(node, def, caps, xmlopt, ctxt, flags);
+            if (VIR_APPEND_ELEMENT(devlist->devs, devlist->count, dev) < 0) {
+                virDomainDeviceDefFree(dev);
+                virDomainDeviceDefListFree(devlist);
+                goto exit;
+            }
+            dev = NULL;
+        }
+        node = node->next;
+    }
+
+ exit:
+    xmlFreeDoc(xmlPtr);
+    xmlXPathFreeContext(ctxt);
+    return devlist;
 }
