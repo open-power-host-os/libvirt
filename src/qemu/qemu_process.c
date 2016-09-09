@@ -6328,8 +6328,6 @@ void qemuProcessStop(virQEMUDriverPtr driver,
     priv->autoCpuset = NULL;
 
     /* remove address data */
-    virDomainPCIAddressSetFree(priv->pciaddrs);
-    priv->pciaddrs = NULL;
     virDomainUSBAddressSetFree(priv->usbaddrs);
     priv->usbaddrs = NULL;
 
