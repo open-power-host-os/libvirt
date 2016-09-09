@@ -660,16 +660,6 @@ virDomainPCIAddressEnsureAddr(virDomainPCIAddressSetPtr addrs,
         goto cleanup;
 
     if (virDeviceInfoPCIAddressPresent(dev)) {
-        /* We do not support hotplug multi-function PCI device now, so we should
-         * reserve the whole slot. The function of the PCI device must be 0.
-         */
-        if (dev->addr.pci.function != 0) {
-            virReportError(VIR_ERR_INTERNAL_ERROR, "%s",
-                           _("Only PCI device addresses with function=0"
-                             " are supported"));
-            goto cleanup;
-        }
-
         if (!virDomainPCIAddressValidate(addrs, &dev->addr.pci,
                                          addrStr, flags, true))
             goto cleanup;
@@ -691,7 +681,11 @@ int
 virDomainPCIAddressReleaseAddr(virDomainPCIAddressSetPtr addrs,
                                virPCIDeviceAddressPtr addr)
 {
-    addrs->buses[addr->bus].slot[addr->slot].functions &= ~(1 << addr->function);
+    if ((addr->multi == VIR_TRISTATE_SWITCH_ABSENT) && (addr->function == 0))
+        addrs->buses[addr->bus].slot[addr->slot].functions = 0;
+    else
+        addrs->buses[addr->bus].slot[addr->slot].functions &= ~(1 << addr->function);
+
     return 0;
 }
 
