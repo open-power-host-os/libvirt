@@ -120,6 +120,7 @@ virDomainPCIAddressSetFree;
 virDomainPCIAddressSlotInUse;
 virDomainPCIAddressValidate;
 virDomainPCIControllerModelToConnectType;
+virDomainPCIMultifunctionDeviceAddressValidateAssign;
 virDomainUSBAddressAssign;
 virDomainUSBAddressCountAllPorts;
 virDomainUSBAddressEnsure;
