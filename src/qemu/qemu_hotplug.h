@@ -144,6 +144,11 @@ void qemuDomainRemoveVcpuAlias(virQEMUDriverPtr driver,
                                virDomainObjPtr vm,
                                const char *alias);
 
+int qemuDomainAttachPCIHostDevicePrepare(virQEMUDriverPtr driver,
+                                         virDomainDefPtr def,
+                                         virDomainHostdevDefPtr dev,
+                                         virQEMUCapsPtr qemuCaps);
+
 int
 qemuDomainChrInsert(virDomainDefPtr vmdef,
                     virDomainChrDefPtr chr);
