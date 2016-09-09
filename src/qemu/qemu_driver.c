@@ -8184,6 +8184,8 @@ qemuDomainAttachDeviceLiveAndConfig(virConnectPtr conn,
     virDomainDeviceDefPtr dev = NULL, dev_copy = NULL;
     int ret = -1;
     virCapsPtr caps = NULL;
+    virQEMUCapsPtr qemuCaps = NULL;
+    qemuDomainObjPrivatePtr priv;
     unsigned int parse_flags = VIR_DOMAIN_DEF_PARSE_INACTIVE |
                                VIR_DOMAIN_DEF_PARSE_ABI_UPDATE;
 
@@ -8212,6 +8214,12 @@ qemuDomainAttachDeviceLiveAndConfig(virConnectPtr conn,
             goto cleanup;
     }
 
+    priv = vm->privateData;
+    if (priv->qemuCaps)
+        qemuCaps = virObjectRef(priv->qemuCaps);
+    else if (!(qemuCaps = virQEMUCapsCacheLookup(caps, driver->qemuCapsCache, vm->def->emulator)))
+        goto cleanup;
+
     if (flags & VIR_DOMAIN_AFFECT_CONFIG) {
         /* Make a copy for updated domain. */
         vmdef = virDomainObjCopyPersistentDef(vm, caps, driver->xmlopt);
@@ -8232,8 +8240,13 @@ qemuDomainAttachDeviceLiveAndConfig(virConnectPtr conn,
                                          VIR_DOMAIN_DEVICE_ACTION_ATTACH) < 0)
             goto cleanup;
 
-        if ((ret = qemuDomainAttachDeviceLive(vm, dev_copy, conn, driver)) < 0)
+        if (dev_copy->type == VIR_DOMAIN_DEVICE_HOSTDEV &&
+            dev_copy->data.hostdev->source.subsys.type == VIR_DOMAIN_HOSTDEV_SUBSYS_TYPE_PCI &&
+            qemuDomainAttachPCIHostDevicePrepare(driver, vm->def, dev_copy->data.hostdev, qemuCaps) < 0)
             goto cleanup;
+
+        if ((ret = qemuDomainAttachDeviceLive(vm, dev_copy, conn, driver)) < 0)
+            goto undoprepare;
         /*
          * update domain status forcibly because the domain status may be
          * changed even if we failed to attach the device. For example,
@@ -8261,8 +8274,15 @@ qemuDomainAttachDeviceLiveAndConfig(virConnectPtr conn,
     virDomainDeviceDefFree(dev);
     virObjectUnref(cfg);
     virObjectUnref(caps);
+    virObjectUnref(qemuCaps);
 
     return ret;
+
+ undoprepare:
+    if (dev_copy->type == VIR_DOMAIN_DEVICE_HOSTDEV &&
+        dev_copy->data.hostdev->source.subsys.type == VIR_DOMAIN_HOSTDEV_SUBSYS_TYPE_PCI)
+        qemuHostdevReAttachPCIDevices(driver, vm->def->name, &dev_copy->data.hostdev, 1);
+    goto cleanup;
 }
 
 static int
