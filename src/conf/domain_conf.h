@@ -2496,6 +2496,20 @@ typedef enum {
 typedef struct _virDomainXMLOption virDomainXMLOption;
 typedef virDomainXMLOption *virDomainXMLOptionPtr;
 
+struct virDomainDeviceDefList {
+    virDomainDeviceDefPtr *devs;
+    size_t count;
+};
+typedef struct virDomainDeviceDefList *virDomainDeviceDefListPtr;
+
+int
+virDomainDeviceDefListAddCopy(virDomainDeviceDefListPtr list, virDomainDeviceDefPtr dev,
+                              const virDomainDef *def,
+                              virCapsPtr caps,
+                              virDomainXMLOptionPtr xmlopt);
+void virDomainDeviceDefListFree(virDomainDeviceDefListPtr list);
+
+
 /* Called once after everything else has been parsed, for adjusting
  * overall domain defaults.
  * @parseOpaque is opaque data passed by virDomainDefParse* caller,
@@ -2837,6 +2851,11 @@ virDomainDeviceDefPtr virDomainDeviceDefParse(const char *xmlStr,
                                               virCapsPtr caps,
                                               virDomainXMLOptionPtr xmlopt,
                                               unsigned int flags);
+virDomainDeviceDefListPtr virDomainDeviceDefParseXMLMany(const char *xmlStr,
+                                                         const virDomainDef *def,
+                                                         virCapsPtr caps,
+                                                         virDomainXMLOptionPtr xmlopt,
+                                                         unsigned int flags);
 virStorageSourcePtr virDomainDiskDefSourceParse(const char *xmlStr,
                                                 const virDomainDef *def,
                                                 virDomainXMLOptionPtr xmlopt,
