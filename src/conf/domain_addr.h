@@ -163,6 +163,10 @@ int virDomainPCIAddressReserveNextSlot(virDomainPCIAddressSetPtr addrs,
                                        virDomainPCIConnectFlags flags)
     ATTRIBUTE_NONNULL(1) ATTRIBUTE_NONNULL(2);
 
+int
+virDomainPCIMultifunctionDeviceAddressValidateAssign(virDomainPCIAddressSetPtr addrs,
+                                             virDomainDeviceDefListPtr devlist);
+
 struct _virDomainCCWAddressSet {
     virHashTablePtr defined;
     virDomainDeviceCCWAddress next;
