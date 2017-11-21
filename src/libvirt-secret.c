@@ -34,9 +34,6 @@ VIR_LOG_INIT("libvirt.secret");
  * Provides the connection pointer associated with a secret.  The reference
  * counter on the connection is not increased by this call.
  *
- * WARNING: When writing libvirt bindings in other languages, do not use this
- * function.  Instead, store the connection and the secret object together.
- *
  * Returns the virConnectPtr or NULL in case of failure.
  */
 virConnectPtr
@@ -125,7 +122,7 @@ virConnectListAllSecrets(virConnectPtr conn,
                          virSecretPtr **secrets,
                          unsigned int flags)
 {
-    VIR_DEBUG("conn=%p, secrets=%p, flags=%x", conn, secrets, flags);
+    VIR_DEBUG("conn=%p, secrets=%p, flags=0x%x", conn, secrets, flags);
 
     virResetLastError();
 
@@ -336,7 +333,7 @@ virSecretLookupByUsage(virConnectPtr conn,
 virSecretPtr
 virSecretDefineXML(virConnectPtr conn, const char *xml, unsigned int flags)
 {
-    VIR_DEBUG("conn=%p, xml=%s, flags=%x", conn, NULLSTR(xml), flags);
+    VIR_DEBUG("conn=%p, xml=%s, flags=0x%x", conn, NULLSTR(xml), flags);
 
     virResetLastError();
 
@@ -490,7 +487,7 @@ virSecretGetXMLDesc(virSecretPtr secret, unsigned int flags)
 {
     virConnectPtr conn;
 
-    VIR_DEBUG("secret=%p, flags=%x", secret, flags);
+    VIR_DEBUG("secret=%p, flags=0x%x", secret, flags);
 
     virResetLastError();
 
@@ -531,7 +528,7 @@ virSecretSetValue(virSecretPtr secret, const unsigned char *value,
 {
     virConnectPtr conn;
 
-    VIR_DEBUG("secret=%p, value=%p, value_size=%zu, flags=%x", secret, value,
+    VIR_DEBUG("secret=%p, value=%p, value_size=%zu, flags=0x%x", secret, value,
               value_size, flags);
 
     virResetLastError();
@@ -575,7 +572,7 @@ virSecretGetValue(virSecretPtr secret, size_t *value_size, unsigned int flags)
 {
     virConnectPtr conn;
 
-    VIR_DEBUG("secret=%p, value_size=%p, flags=%x", secret, value_size, flags);
+    VIR_DEBUG("secret=%p, value_size=%p, flags=0x%x", secret, value_size, flags);
 
     virResetLastError();
 

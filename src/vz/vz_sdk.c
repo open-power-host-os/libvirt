@@ -553,12 +553,11 @@ prlsdkAddDomainVideoInfoCt(virDomainDefPtr def)
     if (def->ngraphics == 0)
         return 0;
 
-    if (VIR_ALLOC(video) < 0)
+    if (!(video = virDomainVideoDefNew()))
         goto cleanup;
 
     video->type = VIR_DOMAIN_VIDEO_TYPE_PARALLELS;
     video->vram = 0;
-    video->heads = 1;
 
     if (VIR_APPEND_ELEMENT(def->videos, def->nvideos, video) < 0)
         goto cleanup;
@@ -1790,11 +1789,8 @@ prlsdkConvertBootOrderVm(PRL_HANDLE sdkdom, virDomainDefPtr def)
         pret = PrlBootDev_IsInUse(bootDev, &inUse);
         prlsdkCheckRetGoto(pret, cleanup);
 
-        if (!inUse) {
-            virReportError(VIR_ERR_CONFIG_UNSUPPORTED, "%s",
-                           _("Boot ordering with disabled items is not supported"));
-            goto cleanup;
-        }
+        if (!inUse)
+            continue;
 
         pret = PrlBootDev_GetSequenceIndex(bootDev, &bootIndex);
         prlsdkCheckRetGoto(pret, cleanup);
@@ -1891,9 +1887,9 @@ prlsdkLoadDomain(vzDriverPtr driver,
 
     def->virtType = VIR_DOMAIN_VIRT_VZ;
 
-    def->onReboot = VIR_DOMAIN_LIFECYCLE_RESTART;
-    def->onPoweroff = VIR_DOMAIN_LIFECYCLE_DESTROY;
-    def->onCrash = VIR_DOMAIN_LIFECYCLE_CRASH_DESTROY;
+    def->onReboot = VIR_DOMAIN_LIFECYCLE_ACTION_RESTART;
+    def->onPoweroff = VIR_DOMAIN_LIFECYCLE_ACTION_DESTROY;
+    def->onCrash = VIR_DOMAIN_LIFECYCLE_ACTION_DESTROY;
 
     /* get RAM parameters */
     pret = PrlVmCfg_GetRamSize(sdkdom, &ram);
@@ -2595,9 +2591,9 @@ prlsdkCheckUnsupportedParams(PRL_HANDLE sdkdom, virDomainDefPtr def)
         return -1;
     }
 
-    if (def->onReboot != VIR_DOMAIN_LIFECYCLE_RESTART ||
-        def->onPoweroff != VIR_DOMAIN_LIFECYCLE_DESTROY ||
-        def->onCrash != VIR_DOMAIN_LIFECYCLE_CRASH_DESTROY) {
+    if (def->onReboot != VIR_DOMAIN_LIFECYCLE_ACTION_RESTART ||
+        def->onPoweroff != VIR_DOMAIN_LIFECYCLE_ACTION_DESTROY ||
+        def->onCrash != VIR_DOMAIN_LIFECYCLE_ACTION_DESTROY) {
 
         virReportError(VIR_ERR_CONFIG_UNSUPPORTED, "%s",
                        _("on_reboot, on_poweroff and on_crash parameters "
@@ -4488,7 +4484,7 @@ prlsdkFindNetByPath(PRL_HANDLE sdkdom, const char *path)
 }
 
 int
-prlsdkGetNetStats(PRL_HANDLE sdkstats, PRL_HANDLE sdkdom, const char *path,
+prlsdkGetNetStats(PRL_HANDLE sdkstats, PRL_HANDLE sdkdom, const char *device,
                   virDomainInterfaceStatsPtr stats)
 {
     int ret = -1;
@@ -4496,8 +4492,13 @@ prlsdkGetNetStats(PRL_HANDLE sdkstats, PRL_HANDLE sdkdom, const char *path,
     char *name = NULL;
     PRL_RESULT pret;
     PRL_HANDLE net = PRL_INVALID_HANDLE;
+    virMacAddr mac;
 
-    net = prlsdkFindNetByPath(sdkdom, path);
+    if (virMacAddrParse(device, &mac) == 0)
+        net = prlsdkFindNetByMAC(sdkdom, &mac);
+    else
+        net = prlsdkFindNetByPath(sdkdom, device);
+
     if (net == PRL_INVALID_HANDLE)
        goto cleanup;
 
@@ -4676,7 +4677,7 @@ prlsdkParseSnapshotTree(const char *treexml)
         goto cleanup;
 
     root = xmlDocGetRootElement(xml);
-    if (!xmlStrEqual(root->name, BAD_CAST "ParallelsSavedStates")) {
+    if (!virXMLNodeNameEqual(root, "ParallelsSavedStates")) {
         virReportError(VIR_ERR_INTERNAL_ERROR,
                        _("unexpected root element: '%s'"), root->name);
         goto cleanup;

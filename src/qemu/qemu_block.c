@@ -20,6 +20,7 @@
 
 #include "qemu_block.h"
 #include "qemu_domain.h"
+#include "qemu_alias.h"
 
 #include "viralloc.h"
 #include "virstring.h"
@@ -256,7 +257,7 @@ qemuBlockDiskClearDetectedNodes(virDomainDiskDefPtr disk)
 {
     virStorageSourcePtr next = disk->src;
 
-    while (next) {
+    while (virStorageSourceIsBacking(next)) {
         VIR_FREE(next->nodeformat);
         VIR_FREE(next->nodestorage);
 
@@ -271,36 +272,46 @@ qemuBlockDiskDetectNodes(virDomainDiskDefPtr disk,
 {
     qemuBlockNodeNameBackingChainDataPtr entry = NULL;
     virStorageSourcePtr src = disk->src;
-
-    if (!(entry = virHashLookup(disktable, disk->info.alias)))
-        return 0;
+    char *alias = NULL;
+    int ret = -1;
 
     /* don't attempt the detection if the top level already has node names */
     if (src->nodeformat || src->nodestorage)
         return 0;
 
-    while (src && entry) {
+    if (!(alias = qemuAliasFromDisk(disk)))
+        goto cleanup;
+
+    if (!(entry = virHashLookup(disktable, alias))) {
+        ret = 0;
+        goto cleanup;
+    }
+
+    while (virStorageSourceIsBacking(src) && entry) {
         if (src->nodeformat || src->nodestorage) {
             if (STRNEQ_NULLABLE(src->nodeformat, entry->nodeformat) ||
                 STRNEQ_NULLABLE(src->nodestorage, entry->nodestorage))
-                goto error;
+                goto cleanup;
 
             break;
         } else {
             if (VIR_STRDUP(src->nodeformat, entry->nodeformat) < 0 ||
                 VIR_STRDUP(src->nodestorage, entry->nodestorage) < 0)
-                goto error;
+                goto cleanup;
         }
 
         entry = entry->backing;
         src = src->backingStore;
     }
 
-    return 0;
+    ret = 0;
 
- error:
-    qemuBlockDiskClearDetectedNodes(disk);
-    return -1;
+ cleanup:
+    VIR_FREE(alias);
+    if (ret < 0)
+        qemuBlockDiskClearDetectedNodes(disk);
+
+    return ret;
 }
 
 
@@ -380,6 +391,74 @@ qemuBlockGetNodeData(virJSONValuePtr data)
 
 
 /**
+ * qemuBlockStorageSourceBuildJSONSocketAddress
+ * @host: the virStorageNetHostDefPtr definition to build
+ * @legacy: use 'tcp' instead of 'inet' for compatibility reasons
+ *
+ * Formats @hosts into a json object conforming to the 'SocketAddress' type
+ * in qemu.
+ *
+ * This function can be used when only 1 src->nhosts is expected in order
+ * to build a command without the array indices after "server.". That is
+ * to see "server.type", "server.host", and "server.port" instead of
+ * "server.#.type", "server.#.host", and "server.#.port".
+ *
+ * Returns a virJSONValuePtr for a single server.
+ */
+static virJSONValuePtr
+qemuBlockStorageSourceBuildJSONSocketAddress(virStorageNetHostDefPtr host,
+                                             bool legacy)
+{
+    virJSONValuePtr server = NULL;
+    virJSONValuePtr ret = NULL;
+    const char *transport;
+    char *port = NULL;
+
+    switch ((virStorageNetHostTransport) host->transport) {
+    case VIR_STORAGE_NET_HOST_TRANS_TCP:
+        if (legacy)
+            transport = "tcp";
+        else
+            transport = "inet";
+
+        if (virAsprintf(&port, "%u", host->port) < 0)
+            goto cleanup;
+
+        if (virJSONValueObjectCreate(&server,
+                                     "s:type", transport,
+                                     "s:host", host->name,
+                                     "s:port", port,
+                                     NULL) < 0)
+            goto cleanup;
+        break;
+
+    case VIR_STORAGE_NET_HOST_TRANS_UNIX:
+        if (virJSONValueObjectCreate(&server,
+                                     "s:type", "unix",
+                                     "s:socket", host->socket,
+                                     NULL) < 0)
+            goto cleanup;
+        break;
+
+    case VIR_STORAGE_NET_HOST_TRANS_RDMA:
+    case VIR_STORAGE_NET_HOST_TRANS_LAST:
+        virReportError(VIR_ERR_INTERNAL_ERROR,
+                       _("transport protocol '%s' is not yet supported"),
+                       virStorageNetHostTransportTypeToString(host->transport));
+        goto cleanup;
+    }
+
+    VIR_STEAL_PTR(ret, server);
+
+ cleanup:
+    VIR_FREE(port);
+    virJSONValueFree(server);
+
+    return ret;
+}
+
+
+/**
  * qemuBlockStorageSourceBuildHostsJSONSocketAddress:
  * @src: disk storage source
  * @legacy: use 'tcp' instead of 'inet' for compatibility reasons
@@ -395,8 +474,6 @@ qemuBlockStorageSourceBuildHostsJSONSocketAddress(virStorageSourcePtr src,
     virJSONValuePtr server = NULL;
     virJSONValuePtr ret = NULL;
     virStorageNetHostDefPtr host;
-    const char *transport;
-    char *port = NULL;
     size_t i;
 
     if (!(servers = virJSONValueNewArray()))
@@ -405,39 +482,8 @@ qemuBlockStorageSourceBuildHostsJSONSocketAddress(virStorageSourcePtr src,
     for (i = 0; i < src->nhosts; i++) {
         host = src->hosts + i;
 
-        switch ((virStorageNetHostTransport) host->transport) {
-        case VIR_STORAGE_NET_HOST_TRANS_TCP:
-            if (legacy)
-                transport = "tcp";
-            else
-                transport = "inet";
-
-            if (virAsprintf(&port, "%u", host->port) < 0)
-                goto cleanup;
-
-            if (virJSONValueObjectCreate(&server,
-                                         "s:type", transport,
-                                         "s:host", host->name,
-                                         "s:port", port,
-                                         NULL) < 0)
-                goto cleanup;
-            break;
-
-        case VIR_STORAGE_NET_HOST_TRANS_UNIX:
-            if (virJSONValueObjectCreate(&server,
-                                         "s:type", "unix",
-                                         "s:socket", host->socket,
-                                         NULL) < 0)
-                goto cleanup;
-            break;
-
-        case VIR_STORAGE_NET_HOST_TRANS_RDMA:
-        case VIR_STORAGE_NET_HOST_TRANS_LAST:
-            virReportError(VIR_ERR_INTERNAL_ERROR,
-                           _("transport protocol '%s' is not yet supported"),
-                           virStorageNetHostTransportTypeToString(host->transport));
-            goto cleanup;
-        }
+        if (!(server = qemuBlockStorageSourceBuildJSONSocketAddress(host, legacy)))
+              goto cleanup;
 
         if (virJSONValueArrayAppend(servers, server) < 0)
             goto cleanup;
@@ -450,7 +496,6 @@ qemuBlockStorageSourceBuildHostsJSONSocketAddress(virStorageSourcePtr src,
  cleanup:
     virJSONValueFree(servers);
     virJSONValueFree(server);
-    VIR_FREE(port);
 
     return ret;
 }
@@ -482,6 +527,39 @@ qemuBlockStorageSourceGetGlusterProps(virStorageSourcePtr src)
 }
 
 
+static virJSONValuePtr
+qemuBlockStorageSourceGetVxHSProps(virStorageSourcePtr src)
+{
+    const char *protocol = virStorageNetProtocolTypeToString(src->protocol);
+    virJSONValuePtr server = NULL;
+    virJSONValuePtr ret = NULL;
+
+    if (src->nhosts != 1) {
+        virReportError(VIR_ERR_INTERNAL_ERROR, "%s",
+                       _("VxHS protocol accepts only one host"));
+        return NULL;
+    }
+
+    if (!(server = qemuBlockStorageSourceBuildJSONSocketAddress(src->hosts, true)))
+        return NULL;
+
+    /* VxHS disk specification example:
+     * { driver:"vxhs",
+     *   tls-creds:"objvirtio-disk0_tls0",
+     *   vdisk-id:"eb90327c-8302-4725-4e85ed4dc251",
+     *   server:{type:"tcp", host:"1.2.3.4", port:9999}}
+     */
+    if (virJSONValueObjectCreate(&ret,
+                                 "s:driver", protocol,
+                                 "S:tls-creds", src->tlsAlias,
+                                 "s:vdisk-id", src->path,
+                                 "a:server", server, NULL) < 0)
+        virJSONValueFree(server);
+
+    return ret;
+}
+
+
 /**
  * qemuBlockStorageSourceGetBackendProps:
  * @src: disk source
@@ -494,12 +572,17 @@ qemuBlockStorageSourceGetBackendProps(virStorageSourcePtr src)
 {
     int actualType = virStorageSourceGetActualType(src);
     virJSONValuePtr fileprops = NULL;
-    virJSONValuePtr ret = NULL;
 
     switch ((virStorageType) actualType) {
     case VIR_STORAGE_TYPE_BLOCK:
     case VIR_STORAGE_TYPE_FILE:
     case VIR_STORAGE_TYPE_DIR:
+        if (virJSONValueObjectCreate(&fileprops,
+                                     "s:driver", "file",
+                                     "s:filename", src->path, NULL) < 0)
+            return NULL;
+        break;
+
     case VIR_STORAGE_TYPE_VOLUME:
     case VIR_STORAGE_TYPE_NONE:
     case VIR_STORAGE_TYPE_LAST:
@@ -509,7 +592,12 @@ qemuBlockStorageSourceGetBackendProps(virStorageSourcePtr src)
         switch ((virStorageNetProtocol) src->protocol) {
         case VIR_STORAGE_NET_PROTOCOL_GLUSTER:
             if (!(fileprops = qemuBlockStorageSourceGetGlusterProps(src)))
-                goto cleanup;
+                return NULL;
+            break;
+
+        case VIR_STORAGE_NET_PROTOCOL_VXHS:
+            if (!(fileprops = qemuBlockStorageSourceGetVxHSProps(src)))
+                return NULL;
             break;
 
         case VIR_STORAGE_NET_PROTOCOL_NBD:
@@ -529,12 +617,5 @@ qemuBlockStorageSourceGetBackendProps(virStorageSourcePtr src)
         break;
     }
 
-    if (virJSONValueObjectCreate(&ret, "a:file", fileprops, NULL) < 0)
-        goto cleanup;
-
-    fileprops = NULL;
-
- cleanup:
-    virJSONValueFree(fileprops);
-    return ret;
+    return fileprops;
 }

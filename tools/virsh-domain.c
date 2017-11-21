@@ -3061,7 +3061,7 @@ cmdDomIfSetLink(vshControl *ctl, const vshCmd *cmd)
 
         while (cur) {
             if (cur->type == XML_ELEMENT_NODE &&
-                xmlStrEqual(cur->name, BAD_CAST element)) {
+                virXMLNodeNameEqual(cur, element)) {
                 value = virXMLPropString(cur, attr);
 
                 if (STRCASEEQ(value, iface)) {
@@ -3084,7 +3084,7 @@ cmdDomIfSetLink(vshControl *ctl, const vshCmd *cmd)
 
     while (cur) {
         if (cur->type == XML_ELEMENT_NODE &&
-            xmlStrEqual(cur->name, BAD_CAST "link")) {
+            virXMLNodeNameEqual(cur, "link")) {
             /* found, just modify the property */
             xmlSetProp(cur, BAD_CAST "state", BAD_CAST state);
 
@@ -5517,6 +5517,102 @@ cmdScreenshot(vshControl *ctl, const vshCmd *cmd)
 }
 
 /*
+ * "set-lifecycle-action" command
+ */
+static const vshCmdInfo info_setLifecycleAction[] = {
+    {.name = "help",
+     .data = N_("change lifecycle actions")
+    },
+    {.name = "desc",
+     .data = N_("Change lifecycle actions for the guest domain.")
+    },
+    {.name = NULL}
+};
+
+static const vshCmdOptDef opts_setLifecycleAction[] = {
+    VIRSH_COMMON_OPT_DOMAIN_FULL,
+    {.name = "type",
+     .type = VSH_OT_STRING,
+     .flags = VSH_OFLAG_REQ,
+     .help = N_("lifecycle type to modify")
+    },
+    {.name = "action",
+     .type = VSH_OT_STRING,
+     .flags = VSH_OFLAG_REQ,
+     .help = N_("lifecycle action to set")
+    },
+    VIRSH_COMMON_OPT_DOMAIN_CONFIG,
+    VIRSH_COMMON_OPT_DOMAIN_LIVE,
+    VIRSH_COMMON_OPT_DOMAIN_CURRENT,
+    {.name = NULL}
+};
+
+VIR_ENUM_IMPL(virDomainLifecycle, VIR_DOMAIN_LIFECYCLE_LAST,
+              "poweroff",
+              "reboot",
+              "crash")
+
+VIR_ENUM_IMPL(virDomainLifecycleAction, VIR_DOMAIN_LIFECYCLE_ACTION_LAST,
+              "destroy",
+              "restart",
+              "rename-restart",
+              "preserve",
+              "coredump-destroy",
+              "coredump-restart")
+
+static bool
+cmdSetLifecycleAction(vshControl *ctl, const vshCmd *cmd)
+{
+    virDomainPtr dom;
+    bool ret = true;
+    bool config = vshCommandOptBool(cmd, "config");
+    bool live = vshCommandOptBool(cmd, "live");
+    bool current = vshCommandOptBool(cmd, "current");
+    const char *typeStr;
+    const char *actionStr;
+    unsigned int type;
+    unsigned int action;
+    unsigned int flags = 0;
+    int tmpVal;
+
+    VSH_EXCLUSIVE_OPTIONS_VAR(current, live);
+    VSH_EXCLUSIVE_OPTIONS_VAR(current, config);
+
+    if (config)
+        flags |= VIR_DOMAIN_AFFECT_CONFIG;
+    if (live)
+        flags |= VIR_DOMAIN_AFFECT_LIVE;
+
+    if (vshCommandOptStringReq(ctl, cmd, "type", &typeStr) < 0 ||
+        vshCommandOptStringReq(ctl, cmd, "action", &actionStr) < 0) {
+        return false;
+    }
+
+    if ((tmpVal = virDomainLifecycleTypeFromString(typeStr)) < 0) {
+        vshError(ctl, _("Invalid lifecycle type '%s'."), typeStr);
+        return false;
+    }
+    type = tmpVal;
+
+    if ((tmpVal = virDomainLifecycleActionTypeFromString(actionStr)) < 0) {
+        vshError(ctl, _("Invalid lifecycle action '%s'."), actionStr);
+        return false;
+    }
+    action = tmpVal;
+
+    if (!(dom = virshCommandOptDomain(ctl, cmd, NULL)))
+        return false;
+
+    if (virDomainSetLifecycleAction(dom, type, action, flags) < 0) {
+        vshError(ctl, "%s", _("Unable to change lifecycle action."));
+        ret = false;
+    }
+
+    virshDomainFree(dom);
+    return ret;
+}
+
+/*
  * "set-user-password" command
  */
 static const vshCmdInfo info_set_user_password[] = {
@@ -6018,6 +6114,14 @@ cmdDomjobinfo(vshControl *ctl, const vshCmd *cmd)
             goto save_error;
         } else if (rc) {
             vshPrint(ctl, "%-17s %-12llu pages/s\n", _("Dirty rate:"), value);
+        }
+
+        if ((rc = virTypedParamsGetULLong(params, nparams,
+                                          VIR_DOMAIN_JOB_MEMORY_PAGE_SIZE,
+                                          &value)) < 0) {
+            goto save_error;
+        } else if (rc) {
+            vshPrint(ctl, "%-17s %-12llu bytes\n", _("Page size:"), value);
         }
 
         if ((rc = virTypedParamsGetULLong(params, nparams,
@@ -10048,7 +10152,7 @@ static const vshCmdOptDef opts_domxmltonative[] = {
      .help = N_("domain name, id or uuid")
     },
     {.name = "xml",
-     .type = VSH_OT_ARGV,
+     .type = VSH_OT_STRING,
      .help = N_("xml data file to export from")
     },
     {.name = NULL}
@@ -10768,6 +10872,7 @@ cmdMigrate(vshControl *ctl, const vshCmd *cmd)
     VSH_EXCLUSIVE_OPTIONS("live", "offline");
     VSH_EXCLUSIVE_OPTIONS("timeout-suspend", "timeout-postcopy");
     VSH_REQUIRE_OPTION("postcopy-after-precopy", "postcopy");
+    VSH_REQUIRE_OPTION("timeout-postcopy", "postcopy");
     VSH_REQUIRE_OPTION("persistent-xml", "persistent");
 
     if (!(dom = virshCommandOptDomain(ctl, cmd, NULL)))
@@ -11175,6 +11280,8 @@ cmdDomDisplay(vshControl *ctl, const vshCmd *cmd)
     char *xpath = NULL;
     char *listen_addr = NULL;
     int port, tls_port = 0;
+    char *type_conn = NULL;
+    char *sockpath = NULL;
     char *passwd = NULL;
     char *output = NULL;
     const char *scheme[] = { "vnc", "spice", "rdp", NULL };
@@ -11235,9 +11342,6 @@ cmdDomDisplay(vshControl *ctl, const vshCmd *cmd)
         if (tmp)
             tls_port = 0;
 
-        if (!port && !tls_port)
-            continue;
-
         /* Create our XPATH lookup for the current display's address */
         if (virAsprintf(&xpath, xpath_fmt, scheme[iter], "@listen") < 0)
             goto cleanup;
@@ -11247,6 +11351,29 @@ cmdDomDisplay(vshControl *ctl, const vshCmd *cmd)
         VIR_FREE(listen_addr);
         listen_addr = virXPathString(xpath, ctxt);
         VIR_FREE(xpath);
+
+        /* Create our XPATH lookup for the current spice type. */
+        if (virAsprintf(&xpath, xpath_fmt, scheme[iter], "listen/@type") < 0)
+            goto cleanup;
+
+        /* Attempt to get the type of spice connection */
+        VIR_FREE(type_conn);
+        type_conn = virXPathString(xpath, ctxt);
+        VIR_FREE(xpath);
+
+        if (STREQ_NULLABLE(type_conn, "socket")) {
+            if (!sockpath) {
+                if (virAsprintf(&xpath, xpath_fmt, scheme[iter], "listen/@socket") < 0)
+                    goto cleanup;
+
+                sockpath = virXPathString(xpath, ctxt);
+
+                VIR_FREE(xpath);
+            }
+        }
+
+        if (!port && !tls_port && !sockpath)
+            continue;
 
         if (!listen_addr) {
             /* The subelement address - <listen address='xyz'/> -
@@ -11262,11 +11389,9 @@ cmdDomDisplay(vshControl *ctl, const vshCmd *cmd)
 
             listen_addr = virXPathString(xpath, ctxt);
             VIR_FREE(xpath);
-        }
-
-        /* If listen_addr is 0.0.0.0 or [::] we should try to parse URI and set
-         * listen_addr based on current URI. */
-        if (listen_addr) {
+        } else {
+            /* If listen_addr is 0.0.0.0 or [::] we should try to parse URI and set
+             * listen_addr based on current URI. */
             if (virSocketAddrParse(&addr, listen_addr, AF_UNSPEC) > 0 &&
                 virSocketAddrIsWildcard(&addr)) {
 
@@ -11305,19 +11430,27 @@ cmdDomDisplay(vshControl *ctl, const vshCmd *cmd)
         VIR_FREE(xpath);
 
         /* Build up the full URI, starting with the scheme */
-        virBufferAsprintf(&buf, "%s://", scheme[iter]);
+        if (sockpath)
+            virBufferAsprintf(&buf, "%s+unix://", scheme[iter]);
+        else
+            virBufferAsprintf(&buf, "%s://", scheme[iter]);
 
         /* There is no user, so just append password if there's any */
         if (STREQ(scheme[iter], "vnc") && passwd)
             virBufferAsprintf(&buf, ":%s@", passwd);
 
         /* Then host name or IP */
-        if (!listen_addr)
+        if (!listen_addr && !sockpath)
             virBufferAddLit(&buf, "localhost");
-        else if (strchr(listen_addr, ':'))
+        else if (!sockpath && strchr(listen_addr, ':'))
             virBufferAsprintf(&buf, "[%s]", listen_addr);
+        else if (sockpath)
+            virBufferAsprintf(&buf, "%s", sockpath);
         else
             virBufferAsprintf(&buf, "%s", listen_addr);
+
+        /* Free socket to prepare the pointer for the next iteration */
+        VIR_FREE(sockpath);
 
         /* Add the port */
         if (port) {
@@ -11375,6 +11508,8 @@ cmdDomDisplay(vshControl *ctl, const vshCmd *cmd)
 
  cleanup:
     VIR_FREE(xpath);
+    VIR_FREE(type_conn);
+    VIR_FREE(sockpath);
     VIR_FREE(passwd);
     VIR_FREE(listen_addr);
     VIR_FREE(output);
@@ -11901,7 +12036,7 @@ virshDomainDetachInterface(char *doc,
         cur = obj->nodesetval->nodeTab[i]->children;
         while (cur != NULL) {
             if (cur->type == XML_ELEMENT_NODE &&
-                xmlStrEqual(cur->name, BAD_CAST "mac")) {
+                virXMLNodeNameEqual(cur, "mac")) {
                 char *tmp_mac = virXMLPropString(cur, "address");
                 diff_mac = virMacAddrCompare(tmp_mac, mac);
                 VIR_FREE(tmp_mac);
@@ -12056,7 +12191,7 @@ virshFindDisk(const char *doc,
             is_supported = false;
 
             /* Check if the disk is CDROM or floppy disk */
-            if (xmlStrEqual(n->name, BAD_CAST "disk")) {
+            if (virXMLNodeNameEqual(n, "disk")) {
                 char *device_value = virXMLPropString(n, "device");
 
                 if (STREQ(device_value, "cdrom") ||
@@ -12075,13 +12210,13 @@ virshFindDisk(const char *doc,
             if (cur->type == XML_ELEMENT_NODE) {
                 char *tmp = NULL;
 
-                if (xmlStrEqual(cur->name, BAD_CAST "source")) {
+                if (virXMLNodeNameEqual(cur, "source")) {
                     if ((tmp = virXMLPropString(cur, "file")) ||
                         (tmp = virXMLPropString(cur, "dev")) ||
                         (tmp = virXMLPropString(cur, "dir")) ||
                         (tmp = virXMLPropString(cur, "name"))) {
                     }
-                } else if (xmlStrEqual(cur->name, BAD_CAST "target")) {
+                } else if (virXMLNodeNameEqual(cur, "target")) {
                     tmp = virXMLPropString(cur, "dev");
                 }
 
@@ -12160,13 +12295,13 @@ virshUpdateDiskXML(xmlNodePtr disk_node,
         if (tmp->type != XML_ELEMENT_NODE)
             continue;
 
-        if (xmlStrEqual(tmp->name, BAD_CAST "source"))
+        if (virXMLNodeNameEqual(tmp, "source"))
             source = tmp;
 
-        if (xmlStrEqual(tmp->name, BAD_CAST "target"))
+        if (virXMLNodeNameEqual(tmp, "target"))
             target_node = tmp;
 
-        if (xmlStrEqual(tmp->name, BAD_CAST "backingStore"))
+        if (virXMLNodeNameEqual(tmp, "backingStore"))
             backingStore = tmp;
 
         /*
@@ -14208,6 +14343,12 @@ const vshCmdDef domManagementCmds[] = {
      .handler = cmdScreenshot,
      .opts = opts_screenshot,
      .info = info_screenshot,
+     .flags = 0
+    },
+    {.name = "set-lifecycle-action",
+     .handler = cmdSetLifecycleAction,
+     .opts = opts_setLifecycleAction,
+     .info = info_setLifecycleAction,
      .flags = 0
     },
     {.name = "set-user-password",

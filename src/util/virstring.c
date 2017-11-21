@@ -240,6 +240,45 @@ virStringListRemove(char ***strings,
 
 
 /**
+ * virStringListCopy:
+ * @dst: where to store the copy of @strings
+ * @src: a NULL-terminated array of strings
+ *
+ * Makes a deep copy of the @src string list and stores it in @dst. Callers
+ * are responsible for freeing @dst.
+ *
+ * Returns 0 on success, -1 on error.
+ */
+int
+virStringListCopy(char ***dst,
+                  const char **src)
+{
+    char **copy = NULL;
+    size_t i;
+
+    *dst = NULL;
+
+    if (!src)
+        return 0;
+
+    if (VIR_ALLOC_N(copy, virStringListLength(src) + 1) < 0)
+        goto error;
+
+    for (i = 0; src[i]; i++) {
+        if (VIR_STRDUP(copy[i], src[i]) < 0)
+            goto error;
+    }
+
+    *dst = copy;
+    return 0;
+
+ error:
+    virStringListFree(copy);
+    return -1;
+}
+
+
+/**
  * virStringListFree:
  * @str_array: a NULL-terminated array of strings to free
  *
@@ -1195,6 +1234,24 @@ virStringStripIPv6Brackets(char *str)
 }
 
 
+/**
+ * virStringHasChars:
+ * @str: string to look for chars in
+ * @chars: chars to find in string @str
+ *
+ * Returns true if @str contains any of the chars in @chars.
+ */
+bool
+virStringHasChars(const char *str,
+                  const char *chars)
+{
+    if (!str)
+        return false;
+
+    return str[strcspn(str, chars)] != '\0';
+}
+
+
 static const char control_chars[] =
     "\x01\x02\x03\x04\x05\x06\x07"
     "\x08" /* \t \n */ "\x0B\x0C" /* \r */ "\x0E\x0F"
@@ -1204,10 +1261,7 @@ static const char control_chars[] =
 bool
 virStringHasControlChars(const char *str)
 {
-    if (!str)
-        return false;
-
-    return str[strcspn(str, control_chars)] != '\0';
+    return virStringHasChars(str, control_chars);
 }
 
 

@@ -249,7 +249,7 @@ Will print the current directory.
 is automatically run with the I<URI> parameter requested by the C<-c>
 option on the command line. The I<URI> parameter specifies how to
 connect to the hypervisor. The documentation page at
-L<http://libvirt.org/uri.html> list the values supported, but the most
+L<https://libvirt.org/uri.html> list the values supported, but the most
 common are:
 
 =over 4
@@ -275,7 +275,7 @@ connect to a local linux container
 To find the currently used URI, check the I<uri> command documented below.
 
 For remote access see the documentation page at
-L<http://libvirt.org/uri.html> on how to make URIs.
+L<https://libvirt.org/uri.html> on how to make URIs.
 The I<--readonly> option allows for read-only connection
 
 =item B<uri>
@@ -350,7 +350,7 @@ we are currently connected to. This includes a section on the host
 capabilities in terms of CPU and features, and a set of description
 for each kind of guest which can be virtualized. For a more complete
 description see:
-  L<http://libvirt.org/formatcaps.html>
+  L<https://libvirt.org/formatcaps.html>
 The XML also show the NUMA topology information if available.
 
 =item B<domcapabilities> [I<virttype>] [I<emulatorbin>]
@@ -590,7 +590,7 @@ contain either host or guest CPU definition. The host CPU definition is the
 <cpu> element and its contents as printed by B<capabilities> command. The
 guest CPU definition is the <cpu> element and its contents from domain XML
 definition. For more information on guest CPU definition see:
-L<http://libvirt.org/formatdomain.html#elementsCPU>. If I<--error> is
+L<https://libvirt.org/formatdomain.html#elementsCPU>. If I<--error> is
 specified, the command will return an error when the given CPU is
 incompatible with host CPU and a message providing more details about the
 incompatibility will be printed out.
@@ -636,13 +636,20 @@ the I<--force> flag may be specified, requesting to disconnect any existing
 sessions, such as in a case of a broken connection.
 
 =item B<create> I<FILE> [I<--console>] [I<--paused>] [I<--autodestroy>]
-[I<--pass-fds N,M,...>]
+[I<--pass-fds N,M,...>] [I<--validate>]
 
-Create a domain from an XML <file>. An easy way to create the XML
-<file> is to use the B<dumpxml> command to obtain the definition of a
-pre-existing guest.  The domain will be paused if the I<--paused> option
-is used and supported by the driver; otherwise it will be running.
-If I<--console> is requested, attach to the console after creation.
+Create a domain from an XML <file>. Optionally, I<--validate> option can be
+passed to validate the format of the input XML file against an internal RNG
+schema (identical to using L<virt-xml-validate(1)> tool). Domains created using
+this command are going to be either transient (temporary ones that will vanish
+once destroyed) or existing persistent domains that will run with one-time use
+configuration, leaving the persistent XML untouched (this can come handy during
+an automated testing of various configurations all based on the original XML).
+See the B<Example> section for usage demonstration.
+
+The domain will be paused if the I<--paused> option is used
+and supported by the driver; otherwise it will be running. If I<--console> is
+requested, attach to the console after creation.
 If I<--autodestroy> is requested, then the guest will be automatically
 destroyed when virsh closes its connection to libvirt, or otherwise
 exits.
@@ -654,14 +661,31 @@ is only supported with container based virtualization.
 
 B<Example>
 
- virsh dumpxml <domain> > domain.xml
- vi domain.xml (or make changes with your other text editor)
- virsh create domain.xml
+ 1) prepare a template from an existing domain (skip directly to 3a if writing
+    one from scratch)
 
-=item B<define> I<FILE>
+ # virsh dumpxml <domain> > domain.xml
 
-Define a domain from an XML <file>. The domain definition is registered
-but not started.  If domain is already running, the changes will take
+ 2) edit the template using an editor of your choice and:
+    a) DO CHANGE! <name> and <uuid> (<uuid> can also be removed), or
+    b) DON'T CHANGE! either <name> or <uuid>
+
+ # $EDITOR domain.xml
+
+ 3) create a domain from domain.xml, depending on whether following 2a or 2b
+    respectively:
+    a) the domain is going to be transient
+    b) an existing persistent domain will run with a modified one-time
+       configuration
+
+ # virsh create domain.xml
+
+=item B<define> I<FILE> [I<--validate>]
+
+Define a domain from an XML <file>. Optionally, the format of the input XML
+file can be validated against an internal RNG schema with I<--validate>
+(identical to using L<virt-xml-validate(1)> tool). The domain definition is
+registered but not started.  If domain is already running, the changes will take
 effect on the next boot.
 
 =item B<desc> I<domain> [[I<--live>] [I<--config>] |
@@ -742,16 +766,25 @@ addresses, or limited output just for one interface if I<interface> is
 specified. Note that I<interface> can be driver dependent, it can be the name
 within guest OS or the name you would see in domain XML. Moreover, the whole
 command may require a guest agent to be configured for the queried domain under
-some drivers, notably qemu. If I<--full> is specified, the interface name is
-always displayed when the interface has multiple addresses or alias, otherwise
-it only displays the interface name for the first address, and "-" for the
-others. The I<--source> argument specifies what data source to use for the
+some hypervisors, notably QEMU.
+
+If I<--full> is specified, the interface name and MAC address is always
+displayed when the interface has multiple IP addresses or aliases; otherwise,
+only the interface name and MAC address is displayed for the first name and
+MAC address with "-" for the others using the same name and MAC address.
+
+The I<--source> argument specifies what data source to use for the
 addresses, currently one of 'lease' to read DHCP leases, or 'agent' to query
 the guest OS via an agent. If unspecified, 'lease' is the default.
 
 =item B<domifstat> I<domain> I<interface-device>
 
-Get network interface stats for a running domain.
+Get network interface stats for a running domain. The network
+interface stats are only available for interfaces that have a
+physical source interface. This does not include, for example, a
+'user' interface type since it is a virtual LAN with NAT to the
+outside world. I<interface-device> can be the interface target by
+name or MAC address.
 
 =item B<domif-setlink> I<domain> I<interface-device> I<state> [I<--config>]
 
@@ -784,7 +817,7 @@ inbound or outbound bandwidth. I<average,peak,burst,floor> is the same as
 in command I<attach-interface>.  Values for I<average>, I<peak> and I<floor>
 are expressed in kilobytes per second, while I<burst> is expressed in kilobytes
 in a single burst at I<peak> speed as described in the Network XML
-documentation at L<http://libvirt.org/formatnetwork.html#elementQoS>.
+documentation at L<https://libvirt.org/formatnetwork.html#elementQoS>.
 
 To clear inbound or outbound settings, use I<--inbound> or I<--outbound>
 respectfully with average value of zero.
@@ -806,16 +839,16 @@ missing from the output. Other fields may appear if communicating with a newer
 version of libvirtd.
 
 B<Explanation of fields>:
-  swap_in           - The amount of data read from swap space (in kB)
-  swap_out          - The amount of memory written out to swap space (in kB)
+  swap_in           - The amount of data read from swap space (in KiB)
+  swap_out          - The amount of memory written out to swap space (in KiB)
   major_fault       - The number of page faults where disk IO was required
   minor_fault       - The number of other page faults
-  unused            - The amount of memory left unused by the system (in kB)
-  available         - The amount of usable memory as seen by the domain (in kB)
-  actual            - Current balloon value (in KB)
-  rss               - Resident Set Size of the running domain's process (in kB)
+  unused            - The amount of memory left unused by the system (in KiB)
+  available         - The amount of usable memory as seen by the domain (in KiB)
+  actual            - Current balloon value (in KiB)
+  rss               - Resident Set Size of the running domain's process (in KiB)
   usable            - The amount of memory which can be reclaimed by balloon
-without causing host swapping (in KB)
+without causing host swapping (in KiB)
   last-update       - Timestamp of the last update of statistics (in seconds)
 
 For QEMU/KVM with a memory balloon, setting the optional I<--period> to a
@@ -902,22 +935,22 @@ I<--cpu-total> returns:
 
 I<--balloon> returns:
 
- "balloon.current" - the memory in kiB currently used
- "balloon.maximum" - the maximum memory in kiB allowed
- "balloon.swap_in" - the amount of data read from swap space (in kB)
+ "balloon.current" - the memory in KiB currently used
+ "balloon.maximum" - the maximum memory in KiB allowed
+ "balloon.swap_in" - the amount of data read from swap space (in KiB)
  "balloon.swap_out" - the amount of memory written out to swap
-                      space (in kB)
+                      space (in KiB)
  "balloon.major_fault" - the number of page faults then disk IO
                          was required
  "balloon.minor_fault" - the number of other page faults
  "balloon.unused" - the amount of memory left unused by the
-                    system (in kB)
+                    system (in KiB)
  "balloon.available" - the amount of usable memory as seen by
-                       the domain (in kB)
+                       the domain (in KiB)
  "balloon.rss" - Resident Set Size of running domain's process
-                 (in kB)
+                 (in KiB)
  "balloon.usable" - the amount of memory which can be reclaimed by
-                    balloon without causing host swapping (in KB)
+                    balloon without causing host swapping (in KiB)
  "balloon.last-update" - timestamp of the last update of statistics
                          (in seconds)
 
@@ -1763,7 +1796,13 @@ periodically increased by I<auto-converge-increment>.
 
 I<--rdma-pin-all> can be used with RDMA migration (i.e., when I<migrateuri>
 starts with rdma://) to tell the hypervisor to pin all domain's memory at once
-before migration starts rather than letting it pin memory pages as needed.
+before migration starts rather than letting it pin memory pages as needed. For
+QEMU/KVM this requires hard_limit memory tuning element (in the domain XML) to
+be used and set to the maximum memory configured for the domain plus any memory
+consumed by the QEMU process itself. Beware of setting the memory limit too
+high (and thus allowing the domain to lock most of the host's memory). Doing so
+may be dangerous to both the domain and the host itself since the host's kernel
+may run out of memory.
 
 B<Note>: Individual hypervisors usually do not support all possible types of
 migration. For example, QEMU does not support direct migration.
@@ -1862,7 +1901,7 @@ order to comply with local firewall policies.
 
 =back
 
-See L<http://libvirt.org/migration.html#uris> for more details on
+See L<https://libvirt.org/migration.html#uris> for more details on
 migration URIs.
 
 Optional I<graphicsuri> overrides connection parameters used for automatically
@@ -2291,6 +2330,13 @@ inside the container, this is the /proc/meminfo "MemTotal" value. When viewing
 the value from the host, use the B<virsh memtune> command. In order to view
 the current memory in use and the maximum value allowed to set memory, use
 the B<virsh dominfo> command.
+
+=item B<set-lifecycle-action> I<domain> I<type> I<action>
+[[I<--config>] [I<--live>] | [I<--current>]]
+
+Set the lifecycle I<action> for specified lifecycle I<type>. For the list of
+lifecycle types and actions and possible combinations see the documentation at
+L<https://libvirt.org/formatdomain.html#elementsEvents>.
 
 =item B<set-user-password> I<domain> I<user> I<password> [I<--encrypted>]
 
@@ -2859,7 +2905,7 @@ is not available the processes will provide an exit code of 1.
 The following commands manipulate devices associated to domains.
 The I<domain> can be specified as a short integer, a name or a full UUID.
 To better understand the values allowed as options for the command
-reading the documentation at L<http://libvirt.org/formatdomain.html> on the
+reading the documentation at L<https://libvirt.org/formatdomain.html> on the
 format of the device sections to get the most accurate set of accepted values.
 
 =over 4
@@ -2870,7 +2916,7 @@ format of the device sections to get the most accurate set of accepted values.
 Attach a device to the domain, using a device definition in an XML
 file using a device definition element such as <disk> or <interface>
 as the top-level element.  See the documentation at
-L<http://libvirt.org/formatdomain.html#elementsDevices> to learn about
+L<https://libvirt.org/formatdomain.html#elementsDevices> to learn about
 libvirt XML format for a device.  If I<--config> is specified the
 command alters the persistent domain configuration with the device
 attach taking effect the next time libvirt starts the domain.
@@ -3014,7 +3060,7 @@ specified.  The other two I<peak> and I<burst> are optional, so
 are expressed in kilobytes per second, while I<burst> is expressed in
 kilobytes in a single burst at I<peak> speed as described in the
 Network XML documentation at
-L<http://libvirt.org/formatnetwork.html#elementQoS>.
+L<https://libvirt.org/formatnetwork.html#elementQoS>.
 
 B<--managed> is usable only for I<hostdev> type and tells libvirt
 that the interface should be managed, which means detached and reattached
@@ -3113,7 +3159,7 @@ Update the characteristics of a device associated with I<domain>,
 based on the device definition in an XML I<file>.  The I<--force> option
 can be used to force device update, e.g., to eject a CD-ROM even if it is
 locked/mounted in the domain. See the documentation at
-L<http://libvirt.org/formatdomain.html#elementsDevices> to learn about
+L<https://libvirt.org/formatdomain.html#elementsDevices> to learn about
 libvirt XML format for a device.
 
 If I<--live> is specified, affect a running domain.
@@ -3179,7 +3225,7 @@ the host's hard disk controller where the guest's disk images live could
 cause the host system to lock up or reboot).
 
 For more information on node device definition see:
-L<http://libvirt.org/formatnode.html>.
+L<https://libvirt.org/formatnode.html>.
 
 Passthrough devices cannot be simultaneously used by the host and its
 guest domains, nor by multiple active guests at once.  If the
@@ -3282,7 +3328,7 @@ before the event.
 The following commands manipulate networks. Libvirt has the capability to
 define virtual networks which can then be used by domains and linked to
 actual network devices. For more detailed information about this feature
-see the documentation at L<http://libvirt.org/formatnetwork.html> . Many
+see the documentation at L<https://libvirt.org/formatnetwork.html> . Many
 of the commands for virtual networks are similar to the ones used for domains,
 but the way to name a virtual network is either by its name or UUID.
 
@@ -3297,7 +3343,7 @@ The I<--disable> option disable autostarting.
 
 Create a transient (temporary) virtual network from an
 XML I<file> and instantiate (start) the network.
-See the documentation at L<http://libvirt.org/formatnetwork.html>
+See the documentation at L<https://libvirt.org/formatnetwork.html>
 to get a description of the XML network format used by libvirt.
 
 =item B<net-define> I<file>
@@ -3570,7 +3616,7 @@ capability to manage various storage solutions, including files, raw
 partitions, and domain-specific formats, used to provide the storage
 volumes visible as devices within virtual machines. For more detailed
 information about this feature, see the documentation at
-L<http://libvirt.org/formatstorage.html> . Many of the commands for
+L<https://libvirt.org/formatstorage.html> . Many of the commands for
 pools are similar to the ones used for domains.
 
 =over 4
@@ -3673,7 +3719,8 @@ just I<--build> is provided, then B<pool-build> is called with no flags.
 =item B<pool-create-as> I<name> I<type>
 [I<--source-host hostname>] [I<--source-path path>] [I<--source-dev path>]
 [I<--source-name name>] [I<--target path>] [I<--source-format format>]
-[I<--auth-type authtype> I<--auth-username username> I<--secret-usage usage>]
+[I<--auth-type authtype> I<--auth-username username>
+[I<--secret-usage usage> | I<--secret-uuid uuid>]]
 [[I<--adapter-name name>] | [I<--adapter-wwnn> I<--adapter-wwpn>]
 [I<--adapter-parent parent>]]
 [I<--build>] [[I<--overwrite>] | [I<--no-overwrite>]] [I<--print-xml>]
@@ -3707,10 +3754,12 @@ the host file system.
 [I<--source-format format>] provides information about the format of the
 pool (pool types fs, netfs, disk, logical).
 
-[I<--auth-type authtype> I<--auth-username username> I<--secret-usage usage>]
+[I<--auth-type authtype> I<--auth-username username>
+[I<--secret-usage usage> | I<--secret-uuid uuid>]]
 provides the elements required to generate authentication credentials for
 the storage pool. The I<authtype> is either chap for iscsi I<type> pools or
-ceph for rbd I<type> pools.
+ceph for rbd I<type> pools. Either the secret I<usage> or I<uuid> value may
+be provided, but not both.
 
 [I<--adapter-name name>] defines the scsi_hostN adapter name to be used for
 the scsi_host adapter type pool.
@@ -3740,7 +3789,8 @@ from the XML I<file>.
 =item B<pool-define-as> I<name> I<type>
 [I<--source-host hostname>] [I<--source-path path>] [I<--source-dev path>]
 [I<--source-name name>] [I<--target path>] [I<--source-format format>]
-[I<--auth-type authtype> I<--auth-username username> I<--secret-usage usage>]
+[I<--auth-type authtype> I<--auth-username username>
+[I<--secret-usage usage> | I<--secret-uuid uuid>]]
 [[I<--adapter-name name>] | [I<--adapter-wwnn> I<--adapter-wwpn>]
 [I<--adapter-parent parent>]] [I<--print-xml>]
 
@@ -4137,7 +4187,7 @@ The following commands manipulate "secrets" (e.g. passwords, passphrases and
 encryption keys).  Libvirt can store secrets independently from their use, and
 other objects (e.g. volumes or domains) can refer to the secrets for encryption
 or possibly other uses.  Secrets are identified using a UUID.  See
-L<http://libvirt.org/formatsecret.html> for documentation of the XML format
+L<https://libvirt.org/formatsecret.html> for documentation of the XML format
 used to represent properties of secrets.
 
 =over 4
@@ -4203,7 +4253,7 @@ disk, memory, and device state of a domain at a point-of-time, and save it
 for future use.  They have many uses, from saving a "clean" copy of an OS
 image to saving a domain's state before a potentially destructive operation.
 Snapshots are identified with a unique name.  See
-L<http://libvirt.org/formatsnapshot.html> for documentation of the XML format
+L<https://libvirt.org/formatsnapshot.html> for documentation of the XML format
 used to represent properties of snapshots.
 
 =over 4
@@ -4744,15 +4794,15 @@ Messages at level ERROR
 =back
 
 For further information about debugging options consult
-L<http://libvirt.org/logging.html>
+L<https://libvirt.org/logging.html>
 
 =back
 
 =head1 BUGS
 
 Report any bugs discovered to the libvirt community via the mailing
-list L<http://libvirt.org/contact.html> or bug tracker
-L<http://libvirt.org/bugs.html>.
+list L<https://libvirt.org/contact.html> or bug tracker
+L<https://libvirt.org/bugs.html>.
 Alternatively report bugs to your software distributor / vendor.
 
 =head1 AUTHORS
@@ -4778,6 +4828,6 @@ PURPOSE
 =head1 SEE ALSO
 
 L<virt-install(1)>, L<virt-xml-validate(1)>, L<virt-top(1)>, L<virt-df(1)>,
-L<http://www.libvirt.org/>
+L<https://libvirt.org/>
 
 =cut

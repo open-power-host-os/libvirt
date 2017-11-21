@@ -1660,16 +1660,13 @@ static int lxcStateInitialize(bool privileged,
     if (!(lxc_driver->hostdevMgr = virHostdevManagerGetDefault()))
         goto cleanup;
 
-    if ((virLXCDriverGetCapabilities(lxc_driver, true)) == NULL)
+    if (!(caps = virLXCDriverGetCapabilities(lxc_driver, true)))
         goto cleanup;
 
     if (!(lxc_driver->xmlopt = lxcDomainXMLConfInit()))
         goto cleanup;
 
     if (!(lxc_driver->closeCallbacks = virCloseCallbacksNew()))
-        goto cleanup;
-
-    if (!(caps = virLXCDriverGetCapabilities(lxc_driver, false)))
         goto cleanup;
 
     if (virFileMakePath(cfg->stateDir) < 0) {
@@ -1700,6 +1697,7 @@ static int lxcStateInitialize(bool privileged,
         goto cleanup;
 
     virNWFilterRegisterCallbackDriver(&lxcCallbackDriver);
+    virObjectUnref(caps);
     return 0;
 
  cleanup:
@@ -2849,16 +2847,15 @@ lxcDomainGetBlkioParameters(virDomainPtr dom,
 }
 
 
-#ifdef __linux__
 static int
 lxcDomainInterfaceStats(virDomainPtr dom,
-                        const char *path,
+                        const char *device,
                         virDomainInterfaceStatsPtr stats)
 {
     virDomainObjPtr vm;
-    size_t i;
     int ret = -1;
     virLXCDriverPtr driver = dom->conn->privateData;
+    virDomainNetDefPtr net = NULL;
 
     if (!(vm = lxcDomObjFromDomain(dom)))
         goto cleanup;
@@ -2875,20 +2872,14 @@ lxcDomainInterfaceStats(virDomainPtr dom,
         goto endjob;
     }
 
-    /* Check the path is one of the domain's network interfaces. */
-    for (i = 0; i < vm->def->nnets; i++) {
-        if (vm->def->nets[i]->ifname &&
-            STREQ(vm->def->nets[i]->ifname, path)) {
-            ret = 0;
-            break;
-        }
-    }
+    if (!(net = virDomainNetFind(vm->def, device)))
+        goto endjob;
 
-    if (ret == 0)
-        ret = virNetDevTapInterfaceStats(path, stats);
-    else
-        virReportError(VIR_ERR_INVALID_ARG,
-                       _("Invalid path, '%s' is not a known interface"), path);
+    if (virNetDevTapInterfaceStats(net->ifname, stats,
+                                   !virDomainNetTypeSharesHostView(net)) < 0)
+        goto endjob;
+
+    ret = 0;
 
  endjob:
     virLXCDomainObjEndJob(driver, vm);
@@ -2897,16 +2888,7 @@ lxcDomainInterfaceStats(virDomainPtr dom,
     virDomainObjEndAPI(&vm);
     return ret;
 }
-#else
-static int
-lxcDomainInterfaceStats(virDomainPtr dom,
-                        const char *path ATTRIBUTE_UNUSED,
-                        virDomainInterfaceStatsPtr stats ATTRIBUTE_UNUSED)
-{
-    virReportUnsupportedError();
-    return -1;
-}
-#endif
+
 
 static int lxcDomainGetAutostart(virDomainPtr dom,
                                    int *autostart)
@@ -3996,7 +3978,8 @@ lxcDomainAttachDeviceNetLive(virConnectPtr conn,
     actualBandwidth = virDomainNetGetActualBandwidth(net);
     if (actualBandwidth) {
         if (virNetDevSupportBandwidth(actualType)) {
-            if (virNetDevBandwidthSet(net->ifname, actualBandwidth, false) < 0)
+            if (virNetDevBandwidthSet(net->ifname, actualBandwidth, false,
+                                      !virDomainNetTypeSharesHostView(net)) < 0)
                 goto cleanup;
         } else {
             VIR_WARN("setting bandwidth on interfaces of "
@@ -4808,8 +4791,7 @@ static int lxcDomainAttachDeviceFlags(virDomainPtr dom,
         if (!vmdef)
             goto endjob;
 
-        if (virDomainDefCompatibleDevice(vmdef, dev,
-                                         VIR_DOMAIN_DEVICE_ACTION_ATTACH) < 0)
+        if (virDomainDefCompatibleDevice(vmdef, dev) < 0)
             goto endjob;
 
         if ((ret = lxcDomainAttachDeviceConfig(vmdef, dev)) < 0)
@@ -4817,8 +4799,7 @@ static int lxcDomainAttachDeviceFlags(virDomainPtr dom,
     }
 
     if (flags & VIR_DOMAIN_AFFECT_LIVE) {
-        if (virDomainDefCompatibleDevice(vm->def, dev_copy,
-                                         VIR_DOMAIN_DEVICE_ACTION_ATTACH) < 0)
+        if (virDomainDefCompatibleDevice(vm->def, dev_copy) < 0)
             goto endjob;
 
         if ((ret = lxcDomainAttachDeviceLive(dom->conn, driver, vm, dev_copy)) < 0)
@@ -4921,8 +4902,7 @@ static int lxcDomainUpdateDeviceFlags(virDomainPtr dom,
         if (!vmdef)
             goto endjob;
 
-        if (virDomainDefCompatibleDevice(vmdef, dev,
-                                         VIR_DOMAIN_DEVICE_ACTION_UPDATE) < 0)
+        if (virDomainDefCompatibleDevice(vmdef, dev) < 0)
             goto endjob;
 
         if ((ret = lxcDomainUpdateDeviceConfig(vmdef, dev)) < 0)
@@ -4930,8 +4910,7 @@ static int lxcDomainUpdateDeviceFlags(virDomainPtr dom,
     }
 
     if (flags & VIR_DOMAIN_AFFECT_LIVE) {
-        if (virDomainDefCompatibleDevice(vm->def, dev_copy,
-                                         VIR_DOMAIN_DEVICE_ACTION_UPDATE) < 0)
+        if (virDomainDefCompatibleDevice(vm->def, dev_copy) < 0)
             goto endjob;
 
         virReportError(VIR_ERR_OPERATION_UNSUPPORTED, "%s",
@@ -5018,19 +4997,11 @@ static int lxcDomainDetachDeviceFlags(virDomainPtr dom,
         if (!vmdef)
             goto endjob;
 
-        if (virDomainDefCompatibleDevice(vmdef, dev,
-                                         VIR_DOMAIN_DEVICE_ACTION_DETACH) < 0)
-            goto endjob;
-
         if ((ret = lxcDomainDetachDeviceConfig(vmdef, dev)) < 0)
             goto endjob;
     }
 
     if (flags & VIR_DOMAIN_AFFECT_LIVE) {
-        if (virDomainDefCompatibleDevice(vm->def, dev_copy,
-                                         VIR_DOMAIN_DEVICE_ACTION_DETACH) < 0)
-            goto endjob;
-
         if ((ret = lxcDomainDetachDeviceLive(driver, vm, dev_copy)) < 0)
             goto endjob;
         /*

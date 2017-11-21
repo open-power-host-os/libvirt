@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<!DOCTYPE html>
 <html xmlns="http://www.w3.org/1999/xhtml">
   <body class="docs">
     <div class="panel">
@@ -59,11 +59,11 @@
           <a href="csharp.html">c#</a>,
           <a href="https://godoc.org/github.com/libvirt/libvirt-go">go</a>,
           <a href="java.html">java</a>,
-          <a href="http://libvirt.org/ocaml/">ocaml</a>.
+          <a href="https://libvirt.org/ocaml/">ocaml</a>.
           <a href="http://search.cpan.org/dist/Sys-Virt/">perl</a>,
           <a href="python.html">python</a>,
           <a href="php.html">php</a>,
-          <a href="http://libvirt.org/ruby/">ruby</a></dd>
+          <a href="https://libvirt.org/ruby/">ruby</a></dd>
 
 
         <dt><a href="format.html">XML schemas</a></dt>

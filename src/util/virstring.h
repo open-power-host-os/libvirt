@@ -46,6 +46,9 @@ char **virStringListAdd(const char **strings,
 void virStringListRemove(char ***strings,
                          const char *item);
 
+int virStringListCopy(char ***dst,
+                      const char **src);
+
 void virStringListFree(char **strings);
 void virStringListFreeCount(char **strings,
                             size_t count);
@@ -286,6 +289,8 @@ char *virStringReplace(const char *haystack,
     ATTRIBUTE_NONNULL(1) ATTRIBUTE_NONNULL(2) ATTRIBUTE_NONNULL(3);
 
 void virStringStripIPv6Brackets(char *str);
+bool virStringHasChars(const char *str,
+                       const char *chars);
 bool virStringHasControlChars(const char *str);
 void virStringStripControlChars(char *str);
 

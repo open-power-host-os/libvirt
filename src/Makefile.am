@@ -167,6 +167,7 @@ UTIL_SOURCES =							\
 		util/virprocess.c util/virprocess.h		\
 		util/virqemu.c util/virqemu.h			\
 		util/virrandom.h util/virrandom.c		\
+		util/virresctrl.h util/virresctrl.c		\
 		util/virrotatingfile.h util/virrotatingfile.c   \
 		util/virscsi.c util/virscsi.h			\
 		util/virscsihost.c util/virscsihost.h		\
@@ -1196,7 +1197,8 @@ XENCONFIG_SOURCES =						\
 		xenconfig/xen_sxpr.c xenconfig/xen_sxpr.h	\
 		xenconfig/xen_xm.c xenconfig/xen_xm.h
 if WITH_LIBXL
-XENCONFIG_SOURCES +=						\
+XENCONFIG_LIBXL_SOURCES =					\
+		$(XENCONFIG_SOURCES)				\
 		xenconfig/xen_xl.c xenconfig/xen_xl.h
 endif WITH_LIBXL
 
@@ -1223,7 +1225,7 @@ libvirt_util_la_LIBADD = $(CAPNG_LIBS) $(YAJL_LIBS) $(LIBNL_LIBS) \
 		$(THREAD_LIBS) $(AUDIT_LIBS) $(DEVMAPPER_LIBS) \
 		$(LIB_CLOCK_GETTIME) $(DBUS_LIBS) $(WIN32_EXTRA_LIBS) $(LIBXML_LIBS) \
 		$(SECDRIVER_LIBS) $(NUMACTL_LIBS) $(ACL_LIBS) \
-		$(POLKIT_LIBS)
+		$(POLKIT_LIBS) $(GNUTLS_LIBS)
 
 
 noinst_LTLIBRARIES += libvirt_conf.la
@@ -1257,10 +1259,17 @@ endif WITH_VMX
 if WITH_XENCONFIG
 noinst_LTLIBRARIES += libvirt_xenconfig.la
 libvirt_la_BUILT_LIBADD += libvirt_xenconfig.la
-libvirt_xenconfig_la_LIBADD = $(LIBXL_LIBS)
 libvirt_xenconfig_la_CFLAGS = \
-		-I$(srcdir)/conf -I$(srcdir)/libxl $(AM_CFLAGS)
+		-I$(srcdir)/conf $(AM_CFLAGS)
 libvirt_xenconfig_la_SOURCES = $(XENCONFIG_SOURCES)
+
+if WITH_LIBXL
+noinst_LTLIBRARIES += libvirt_xenconfig_libxl.la
+libvirt_xenconfig_libxl_la_LIBADD = $(LIBXL_LIBS)
+libvirt_xenconfig_libxl_la_CFLAGS = \
+		-I$(srcdir)/conf -I$(srcdir)/libxl $(AM_CFLAGS)
+libvirt_xenconfig_libxl_la_SOURCES = $(XENCONFIG_LIBXL_SOURCES)
+endif WITH_LIBXL
 endif WITH_XENCONFIG
 
 
@@ -1416,7 +1425,7 @@ libvirt_driver_libxl_impl_la_CFLAGS = 		\
 		$(AM_CFLAGS)
 libvirt_driver_libxl_impl_la_LDFLAGS = $(AM_LDFLAGS)
 libvirt_driver_libxl_impl_la_LIBADD = $(LIBXL_LIBS) \
-				      libvirt_xenconfig.la \
+				      libvirt_xenconfig_libxl.la \
 				      libvirt_secret.la
 libvirt_driver_libxl_impl_la_SOURCES = $(LIBXL_DRIVER_SOURCES)
 
@@ -2044,6 +2053,7 @@ EXTRA_DIST +=							\
 		$(VBOX_DRIVER_EXTRA_DIST)			\
 		$(VMWARE_DRIVER_SOURCES)			\
 		$(XENCONFIG_SOURCES)				\
+		$(XENCONFIG_LIBXL_SOURCES)			\
 		$(ACCESS_DRIVER_POLKIT_POLICY)
 
 check-local: check-augeas
@@ -2226,12 +2236,6 @@ USED_SYM_FILES += $(srcdir)/libvirt_xenconfig.syms
 else ! WITH_XENCONFIG
 SYM_FILES += $(srcdir)/libvirt_xenconfig.syms
 endif ! WITH_XENCONFIG
-
-if WITH_LIBXL
-USED_SYM_FILES += $(srcdir)/libvirt_xenxlconfig.syms
-else ! WITH_LIBXL
-SYM_FILES += $(srcdir)/libvirt_xenxlconfig.syms
-endif ! WITH_LIBXL
 
 if WITH_SASL
 USED_SYM_FILES += $(srcdir)/libvirt_sasl.syms

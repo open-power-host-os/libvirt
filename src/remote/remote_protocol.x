@@ -80,7 +80,7 @@ const REMOTE_NETWORK_LIST_MAX = 16384;
 const REMOTE_INTERFACE_LIST_MAX = 16384;
 
 /* Upper limit on lists of storage pools. */
-const REMOTE_STORAGE_POOL_LIST_MAX = 4096;
+const REMOTE_STORAGE_POOL_LIST_MAX = 16384;
 
 /* Upper limit on lists of storage vols. */
 const REMOTE_STORAGE_VOL_LIST_MAX = 16384;
@@ -92,7 +92,7 @@ const REMOTE_NODE_DEVICE_LIST_MAX = 65536;
 const REMOTE_NODE_DEVICE_CAPS_LIST_MAX = 65536;
 
 /* Upper limit on lists of network filters. */
-const REMOTE_NWFILTER_LIST_MAX = 1024;
+const REMOTE_NWFILTER_LIST_MAX = 16384;
 
 /* Upper limit on list of scheduler parameters. */
 const REMOTE_DOMAIN_SCHEDULER_PARAMETERS_MAX = 16;
@@ -137,7 +137,7 @@ const REMOTE_AUTH_TYPE_LIST_MAX = 20;
 const REMOTE_DOMAIN_MEMORY_STATS_MAX = 1024;
 
 /* Upper limit on lists of domain snapshots. */
-const REMOTE_DOMAIN_SNAPSHOT_LIST_MAX = 1024;
+const REMOTE_DOMAIN_SNAPSHOT_LIST_MAX = 16384;
 
 /* Maximum length of a block peek buffer message.
  * Note applications need to be aware of this limit and issue multiple
@@ -682,7 +682,7 @@ struct remote_domain_block_stats_flags_ret {
 
 struct remote_domain_interface_stats_args {
     remote_nonnull_domain dom;
-    remote_nonnull_string path;
+    remote_nonnull_string device;
 };
 
 struct remote_domain_interface_stats_ret { /* insert@2 */
@@ -3433,6 +3433,12 @@ struct remote_domain_set_block_threshold_args {
     unsigned int flags;
 };
 
+struct remote_domain_set_lifecycle_action_args {
+    remote_nonnull_domain dom;
+    unsigned int type;
+    unsigned int action;
+    unsigned int flags;
+};
 
 /*----- Protocol. -----*/
 
@@ -6108,5 +6114,11 @@ enum remote_procedure {
      * @acl: domain:write
      * @acl: domain:hibernate
      */
-    REMOTE_PROC_DOMAIN_MANAGED_SAVE_DEFINE_XML = 389
+    REMOTE_PROC_DOMAIN_MANAGED_SAVE_DEFINE_XML = 389,
+
+    /**
+     * @generate: both
+     * @acl: domain:write
+     */
+    REMOTE_PROC_DOMAIN_SET_LIFECYCLE_ACTION = 390
 };

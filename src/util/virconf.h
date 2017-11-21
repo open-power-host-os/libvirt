@@ -59,11 +59,11 @@ typedef struct _virConfValue virConfValue;
 typedef virConfValue *virConfValuePtr;
 
 struct _virConfValue {
-    virConfType type;		/* the virConfType */
-    virConfValuePtr next;	/* next element if in a list */
-    long long  l;		/* very long integer */
-    char *str;			/* pointer to 0 terminated string */
-    virConfValuePtr list;	/* list of a list */
+    virConfType type;           /* the virConfType */
+    virConfValuePtr next;       /* next element if in a list */
+    long long  l;               /* very long integer */
+    char *str;                  /* pointer to 0 terminated string */
+    virConfValuePtr list;       /* list of a list */
 };
 
 /**
@@ -79,8 +79,8 @@ typedef int (*virConfWalkCallback)(const char* name,
 
 virConfPtr virConfNew(void);
 virConfPtr virConfReadFile(const char *filename, unsigned int flags);
-virConfPtr virConfReadMem(const char *memory,
-                          int len, unsigned int flags);
+virConfPtr virConfReadString(const char *memory,
+                             unsigned int flags);
 int virConfFree(virConfPtr conf);
 void virConfFreeValue(virConfValuePtr val);
 virConfValuePtr virConfGetValue(virConfPtr conf,

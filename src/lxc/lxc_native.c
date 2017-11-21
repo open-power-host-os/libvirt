@@ -1000,7 +1000,7 @@ lxcParseConfigString(const char *config,
     virConfPtr properties = NULL;
     virConfValuePtr value;
 
-    if (!(properties = virConfReadMem(config, 0, VIR_CONF_FLAG_LXC_FORMAT)))
+    if (!(properties = virConfReadString(config, VIR_CONF_FLAG_LXC_FORMAT)))
         return NULL;
 
     if (!(vmdef = virDomainDefNew()))
@@ -1015,9 +1015,9 @@ lxcParseConfigString(const char *config,
     vmdef->id = -1;
     virDomainDefSetMemoryTotal(vmdef, 64 * 1024);
 
-    vmdef->onReboot = VIR_DOMAIN_LIFECYCLE_RESTART;
-    vmdef->onCrash = VIR_DOMAIN_LIFECYCLE_CRASH_DESTROY;
-    vmdef->onPoweroff = VIR_DOMAIN_LIFECYCLE_DESTROY;
+    vmdef->onReboot = VIR_DOMAIN_LIFECYCLE_ACTION_RESTART;
+    vmdef->onCrash = VIR_DOMAIN_LIFECYCLE_ACTION_DESTROY;
+    vmdef->onPoweroff = VIR_DOMAIN_LIFECYCLE_ACTION_DESTROY;
     vmdef->virtType = VIR_DOMAIN_VIRT_LXC;
 
     /* Value not handled by the LXC driver, setting to

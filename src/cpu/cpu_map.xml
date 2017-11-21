@@ -195,93 +195,102 @@
 
     <!-- cpuid function 0x7 ecx 0x0 features -->
     <feature name='fsgsbase'>
-      <cpuid eax_in='0x07' ebx='0x00000001'/>
+      <cpuid eax_in='0x07' ecx_in='0x00' ebx='0x00000001'/>
     </feature>
     <feature name='tsc_adjust'> <!-- tsc-adjust -->
-      <cpuid eax_in='0x07' ebx='0x00000002'/>
+      <cpuid eax_in='0x07' ecx_in='0x00' ebx='0x00000002'/>
     </feature>
     <feature name='bmi1'>
-      <cpuid eax_in='0x07' ebx='0x00000008'/>
+      <cpuid eax_in='0x07' ecx_in='0x00' ebx='0x00000008'/>
     </feature>
     <feature name='hle'>
-      <cpuid eax_in='0x07' ebx='0x00000010'/>
+      <cpuid eax_in='0x07' ecx_in='0x00' ebx='0x00000010'/>
     </feature>
     <feature name='avx2'>
-      <cpuid eax_in='0x07' ebx='0x00000020'/>
+      <cpuid eax_in='0x07' ecx_in='0x00' ebx='0x00000020'/>
     </feature>
     <feature name='smep'>
-      <cpuid eax_in='0x07' ebx='0x00000080'/>
+      <cpuid eax_in='0x07' ecx_in='0x00' ebx='0x00000080'/>
     </feature>
     <feature name='bmi2'>
-      <cpuid eax_in='0x07' ebx='0x00000100'/>
+      <cpuid eax_in='0x07' ecx_in='0x00' ebx='0x00000100'/>
     </feature>
     <feature name='erms'>
-      <cpuid eax_in='0x07' ebx='0x00000200'/>
+      <cpuid eax_in='0x07' ecx_in='0x00' ebx='0x00000200'/>
     </feature>
     <feature name='invpcid'>
-      <cpuid eax_in='0x07' ebx='0x00000400'/>
+      <cpuid eax_in='0x07' ecx_in='0x00' ebx='0x00000400'/>
     </feature>
     <feature name='rtm'>
-      <cpuid eax_in='0x07' ebx='0x00000800'/>
+      <cpuid eax_in='0x07' ecx_in='0x00' ebx='0x00000800'/>
     </feature>
     <feature name='cmt'>
-      <cpuid eax_in='0x07' ebx='0x00001000'/>
+      <cpuid eax_in='0x07' ecx_in='0x00' ebx='0x00001000'/>
     </feature>
     <feature name='mpx'>
-      <cpuid eax_in='0x07' ebx='0x00004000'/>
+      <cpuid eax_in='0x07' ecx_in='0x00' ebx='0x00004000'/>
     </feature>
     <feature name='avx512f'>
-      <cpuid eax_in='0x07' ebx='0x00010000'/>
+      <cpuid eax_in='0x07' ecx_in='0x00' ebx='0x00010000'/>
     </feature>
     <feature name='avx512dq'>
-      <cpuid eax_in='0x07' ebx='0x00020000'/>
+      <cpuid eax_in='0x07' ecx_in='0x00' ebx='0x00020000'/>
     </feature>
     <feature name='rdseed'>
-      <cpuid eax_in='0x07' ebx='0x00040000'/>
+      <cpuid eax_in='0x07' ecx_in='0x00' ebx='0x00040000'/>
     </feature>
     <feature name='adx'>
-      <cpuid eax_in='0x07' ebx='0x00080000'/>
+      <cpuid eax_in='0x07' ecx_in='0x00' ebx='0x00080000'/>
     </feature>
     <feature name='smap'>
-      <cpuid eax_in='0x07' ebx='0x00100000'/>
+      <cpuid eax_in='0x07' ecx_in='0x00' ebx='0x00100000'/>
     </feature>
     <feature name='avx512ifma'>
-      <cpuid eax_in='0x07' ebx='0x00200000'/>
+      <cpuid eax_in='0x07' ecx_in='0x00' ebx='0x00200000'/>
+    </feature>
+    <feature name='pcommit'>
+      <cpuid eax_in='0x07' ecx_in='0x00' ebx='0x00400000'/>
     </feature>
     <feature name='clflushopt'>
-      <cpuid eax_in='0x07' ebx='0x00800000'/>
+      <cpuid eax_in='0x07' ecx_in='0x00' ebx='0x00800000'/>
+    </feature>
+    <feature name='clwb'>
+      <cpuid eax_in='0x07' ecx_in='0x00' ebx='0x01000000'/>
     </feature>
     <feature name='avx512pf'>
-      <cpuid eax_in='0x07' ebx='0x04000000'/>
+      <cpuid eax_in='0x07' ecx_in='0x00' ebx='0x04000000'/>
     </feature>
     <feature name='avx512er'>
-      <cpuid eax_in='0x07' ebx='0x08000000'/>
+      <cpuid eax_in='0x07' ecx_in='0x00' ebx='0x08000000'/>
     </feature>
     <feature name='avx512cd'>
-      <cpuid eax_in='0x07' ebx='0x10000000'/>
+      <cpuid eax_in='0x07' ecx_in='0x00' ebx='0x10000000'/>
+    </feature>
+    <feature name='sha-ni'>
+      <cpuid eax_in='0x07' ecx_in='0x00' ebx='0x20000000'/>
     </feature>
     <feature name='avx512bw'>
-      <cpuid eax_in='0x07' ebx='0x40000000'/>
+      <cpuid eax_in='0x07' ecx_in='0x00' ebx='0x40000000'/>
     </feature>
     <feature name='avx512vl'>
-      <cpuid eax_in='0x07' ebx='0x80000000'/>
+      <cpuid eax_in='0x07' ecx_in='0x00' ebx='0x80000000'/>
     </feature>
 
     <feature name='avx512vbmi'>
-      <cpuid eax_in='0x07' ecx='0x00000002'/>
+      <cpuid eax_in='0x07' ecx_in='0x00' ecx='0x00000002'/>
     </feature>
     <feature name='pku'>
-      <cpuid eax_in='0x07' ecx='0x00000008'/>
+      <cpuid eax_in='0x07' ecx_in='0x00' ecx='0x00000008'/>
     </feature>
     <feature name='ospke'>
-      <cpuid eax_in='0x07' ecx='0x00000010'/>
+      <cpuid eax_in='0x07' ecx_in='0x00' ecx='0x00000010'/>
     </feature>
 
     <feature name='avx512-4vnniw'>
-      <cpuid eax_in='0x07' edx='0x00000004'/>
+      <cpuid eax_in='0x07' ecx_in='0x00' edx='0x00000004'/>
     </feature>
     <feature name='avx512-4fmaps'>
-      <cpuid eax_in='0x07' edx='0x00000008'/>
+      <cpuid eax_in='0x07' ecx_in='0x00' edx='0x00000008'/>
     </feature>
 
     <!-- Processor Extended State Enumeration sub leaf 1 -->
@@ -1279,6 +1288,81 @@
       <feature name='xsaveopt'/>
     </model>
 
+    <model name='Skylake-Server'>
+      <signature family='6' model='85'/>
+      <vendor name='Intel'/>
+      <feature name='3dnowprefetch'/>
+      <feature name='abm'/>
+      <feature name='adx'/>
+      <feature name='aes'/>
+      <feature name='apic'/>
+      <feature name='arat'/>
+      <feature name='avx'/>
+      <feature name='avx2'/>
+      <feature name='avx512bw'/>
+      <feature name='avx512cd'/>
+      <feature name='avx512dq'/>
+      <feature name='avx512f'/>
+      <feature name='avx512vl'/>
+      <feature name='bmi1'/>
+      <feature name='bmi2'/>
+      <feature name='clflush'/>
+      <feature name='clwb'/>
+      <feature name='cmov'/>
+      <feature name='cx16'/>
+      <feature name='cx8'/>
+      <feature name='de'/>
+      <feature name='erms'/>
+      <feature name='f16c'/>
+      <feature name='fma'/>
+      <feature name='fpu'/>
+      <feature name='fsgsbase'/>
+      <feature name='fxsr'/>
+      <feature name='hle'/>
+      <feature name='invpcid'/>
+      <feature name='lahf_lm'/>
+      <feature name='lm'/>
+      <feature name='mca'/>
+      <feature name='mce'/>
+      <feature name='mmx'/>
+      <feature name='movbe'/>
+      <feature name='mpx'/>
+      <feature name='msr'/>
+      <feature name='mtrr'/>
+      <feature name='nx'/>
+      <feature name='pae'/>
+      <feature name='pat'/>
+      <feature name='pcid'/>
+      <feature name='pclmuldq'/>
+      <feature name='pdpe1gb'/>
+      <feature name='pge'/>
+      <feature name='pni'/>
+      <feature name='popcnt'/>
+      <feature name='pse'/>
+      <feature name='pse36'/>
+      <feature name='rdrand'/>
+      <feature name='rdseed'/>
+      <feature name='rdtscp'/>
+      <feature name='rtm'/>
+      <feature name='sep'/>
+      <feature name='smap'/>
+      <feature name='smep'/>
+      <feature name='sse'/>
+      <feature name='sse2'/>
+      <feature name='sse4.1'/>
+      <feature name='sse4.2'/>
+      <feature name='ssse3'/>
+      <feature name='syscall'/>
+      <feature name='tsc'/>
+      <feature name='tsc-deadline'/>
+      <feature name='vme'/>
+      <feature name='x2apic'/>
+      <feature name='xgetbv1'/>
+      <feature name='xsave'/>
+      <feature name='xsavec'/>
+      <feature name='xsaveopt'/>
+    </model>
+
     <!-- AMD CPUs -->
     <model name='athlon'>
       <vendor name='AMD'/>
@@ -1544,6 +1628,77 @@
       <feature name='tsc'/>
       <feature name='xop'/>
       <feature name='xsave'/>
+    </model>
+
+    <model name='EPYC'>
+      <signature family='23' model='1'/>
+      <vendor name='AMD'/>
+      <feature name='3dnowprefetch'/>
+      <feature name='abm'/>
+      <feature name='adx'/>
+      <feature name='aes'/>
+      <feature name='apic'/>
+      <feature name='arat'/>
+      <feature name='avx'/>
+      <feature name='avx2'/>
+      <feature name='bmi1'/>
+      <feature name='bmi2'/>
+      <feature name='clflush'/>
+      <feature name='clflushopt'/>
+      <feature name='cmov'/>
+      <feature name='cr8legacy'/>
+      <feature name='cx16'/>
+      <feature name='cx8'/>
+      <feature name='de'/>
+      <feature name='f16c'/>
+      <feature name='fma'/>
+      <feature name='fpu'/>
+      <feature name='fsgsbase'/>
+      <feature name='fxsr'/>
+      <feature name='fxsr_opt'/>
+      <feature name='lahf_lm'/>
+      <feature name='lm'/>
+      <feature name='mca'/>
+      <feature name='mce'/>
+      <feature name='misalignsse'/>
+      <feature name='mmx'/>
+      <feature name='mmxext'/>
+      <feature name='monitor'/>
+      <feature name='movbe'/>
+      <feature name='msr'/>
+      <feature name='mtrr'/>
+      <feature name='nx'/>
+      <feature name='osvw'/>
+      <feature name='pae'/>
+      <feature name='pat'/>
+      <feature name='pclmuldq'/>
+      <feature name='pdpe1gb'/>
+      <feature name='pge'/>
+      <feature name='pni'/>
+      <feature name='popcnt'/>
+      <feature name='pse'/>
+      <feature name='pse36'/>
+      <feature name='rdrand'/>
+      <feature name='rdseed'/>
+      <feature name='rdtscp'/>
+      <feature name='sep'/>
+      <feature name='sha-ni'/>
+      <feature name='smap'/>
+      <feature name='smep'/>
+      <feature name='sse'/>
+      <feature name='sse2'/>
+      <feature name='sse4.1'/>
+      <feature name='sse4.2'/>
+      <feature name='sse4a'/>
+      <feature name='ssse3'/>
+      <feature name='svm'/>
+      <feature name='syscall'/>
+      <feature name='tsc'/>
+      <feature name='vme'/>
+      <feature name='xgetbv1'/>
+      <feature name='xsave'/>
+      <feature name='xsavec'/>
+      <feature name='xsaveopt'/>
     </model>
   </arch>
 

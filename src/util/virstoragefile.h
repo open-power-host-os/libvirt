@@ -27,6 +27,7 @@
 # include <sys/stat.h>
 
 # include "virbitmap.h"
+# include "virobject.h"
 # include "virseclabel.h"
 # include "virstorageencryption.h"
 # include "virutil.h"
@@ -134,6 +135,7 @@ typedef enum {
     VIR_STORAGE_NET_PROTOCOL_FTPS,
     VIR_STORAGE_NET_PROTOCOL_TFTP,
     VIR_STORAGE_NET_PROTOCOL_SSH,
+    VIR_STORAGE_NET_PROTOCOL_VXHS,
 
     VIR_STORAGE_NET_PROTOCOL_LAST
 } virStorageNetProtocol;
@@ -226,6 +228,7 @@ typedef virStorageSource *virStorageSourcePtr;
  * IMPORTANT: When adding fields to this struct it's also necessary to add
  * appropriate code to the virStorageSourceCopy deep copy function */
 struct _virStorageSource {
+    unsigned int id; /* backing chain identifier, 0 is unset */
     int type; /* virStorageType */
     char *path;
     int protocol; /* virStorageNetProtocol */
@@ -237,7 +240,11 @@ struct _virStorageSource {
     virStorageNetHostDefPtr hosts;
     virStorageSourcePoolDefPtr srcpool;
     virStorageAuthDefPtr auth;
+    bool authInherited;
     virStorageEncryptionPtr encryption;
+    bool encryptionInherited;
+
+    virObjectPtr privateData;
 
     char *driverName;
     int format; /* virStorageFileFormat in domain backing chains, but
@@ -280,6 +287,22 @@ struct _virStorageSource {
     /* metadata that allows identifying given storage source */
     char *nodeformat;  /* name of the format handler object */
     char *nodestorage; /* name of the storage object */
+
+    /* An optional setting to enable usage of TLS for the storage source */
+    int haveTLS; /* enum virTristateBool */
+
+    /* Indication whether the haveTLS value was altered due to qemu.conf
+     * setting when haveTLS is missing from the domain config file */
+    bool tlsFromConfig;
+
+    /* If TLS is used, then mgmt of the TLS credentials occurs via an
+     * object that is generated using a specific alias for a specific
+     * certificate directory with listen and verify bools. */
+    char *tlsAlias;
+    char *tlsCertdir;
+    bool tlsVerify;
+
+    bool detected; /* true if this entry was not provided by the user */
 };
 
 
@@ -327,7 +350,6 @@ virStorageSourcePtr virStorageFileChainLookup(virStorageSourcePtr chain,
 
 int virStorageFileResize(const char *path,
                          unsigned long long capacity,
-                         unsigned long long orig_capacity,
                          bool pre_allocate);
 
 int virStorageFileIsClusterFS(const char *path);
@@ -409,5 +431,11 @@ virStorageSourceFindByNodeName(virStorageSourcePtr top,
 void
 virStorageSourceNetworkAssignDefaultPorts(virStorageSourcePtr src)
     ATTRIBUTE_NONNULL(1);
+
+bool
+virStorageSourceIsBacking(const virStorageSource *src);
+bool
+virStorageSourceHasBacking(const virStorageSource *src);
+
 
 #endif /* __VIR_STORAGE_FILE_H__ */

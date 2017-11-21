@@ -55,6 +55,7 @@
 #include "virrandom.h"
 #include "virstring.h"
 #include "virgettext.h"
+#include "virhostdev.h"
 
 #include "storage/storage_source.h"
 
@@ -448,7 +449,7 @@ valid_name(const char *name)
 {
     /* just try to filter out any dangerous characters in the name that can be
      * used to subvert the profile */
-    const char *bad = " /[]*";
+    const char *bad = "/[]{}?^,\"*";
 
     if (strlen(name) == 0)
         return -1;
@@ -516,7 +517,8 @@ valid_path(const char *path, const bool readonly)
         "/usr/share/OVMF/",              /* for OVMF images */
         "/usr/share/ovmf/",              /* for OVMF images */
         "/usr/share/AAVMF/",             /* for AAVMF images */
-        "/usr/share/qemu-efi/"           /* for AAVMF images */
+        "/usr/share/qemu-efi/",          /* for AAVMF images */
+        "/usr/share/qemu-efi-aarch64/"   /* for AAVMF images */
     };
     /* override the above with these */
     const char * const override[] = {
@@ -616,7 +618,7 @@ caps_mockup(vahControl * ctl, const char *xmlStr)
         goto cleanup;
     }
 
-    if (!xmlStrEqual(ctxt->node->name, BAD_CAST "domain")) {
+    if (!virXMLNodeNameEqual(ctxt->node, "domain")) {
         vah_error(NULL, 0, _("unexpected root element, expecting <domain>"));
         goto cleanup;
     }
@@ -892,11 +894,11 @@ add_file_path(virDomainDiskDefPtr disk,
 
     if (depth == 0) {
         if (disk->src->readonly)
-            ret = vah_add_file(buf, path, "r");
+            ret = vah_add_file(buf, path, "rk");
         else
-            ret = vah_add_file(buf, path, "rw");
+            ret = vah_add_file(buf, path, "rwk");
     } else {
-        ret = vah_add_file(buf, path, "r");
+        ret = vah_add_file(buf, path, "rk");
     }
 
     if (ret != 0)
@@ -940,7 +942,7 @@ get_files(vahControl * ctl)
         /* XXX - if we knew the qemu user:group here we could send it in
          *        so that the open could be re-tried as that user:group.
          */
-        if (!disk->src->backingStore) {
+        if (!virStorageSourceHasBacking(disk->src)) {
             bool probe = ctl->allowDiskFormatProbing;
             virStorageFileGetMetadata(disk->src, -1, -1, probe, false);
         }
@@ -1029,11 +1031,11 @@ get_files(vahControl * ctl)
             goto cleanup;
 
     if (ctl->def->os.loader && ctl->def->os.loader->path)
-        if (vah_add_file(&buf, ctl->def->os.loader->path, "r") != 0)
+        if (vah_add_file(&buf, ctl->def->os.loader->path, "rk") != 0)
             goto cleanup;
 
     if (ctl->def->os.loader && ctl->def->os.loader->nvram)
-        if (vah_add_file(&buf, ctl->def->os.loader->nvram, "rw") != 0)
+        if (vah_add_file(&buf, ctl->def->os.loader->nvram, "rwk") != 0)
             goto cleanup;
 
     for (i = 0; i < ctl->def->ngraphics; i++) {
@@ -1066,6 +1068,9 @@ get_files(vahControl * ctl)
                     virUSBDeviceNew(usbsrc->bus, usbsrc->device, NULL);
 
                 if (usb == NULL)
+                    continue;
+
+                if (virHostdevFindUSBDevice(dev, true, &usb) < 0)
                     continue;
 
                 rc = virUSBDeviceFileIterate(usb, file_iterate_hostdev_cb, &buf);
@@ -1144,15 +1149,15 @@ get_files(vahControl * ctl)
         }
     }
     if (needsvhost)
-        virBufferAddLit(&buf, "  /dev/vhost-net rw,\n");
+        virBufferAddLit(&buf, "  \"/dev/vhost-net\" rw,\n");
 
     if (needsVfio) {
-        virBufferAddLit(&buf, "  /dev/vfio/vfio rw,\n");
-        virBufferAddLit(&buf, "  /dev/vfio/[0-9]* rw,\n");
+        virBufferAddLit(&buf, "  \"/dev/vfio/vfio\" rw,\n");
+        virBufferAddLit(&buf, "  \"/dev/vfio/[0-9]*\" rw,\n");
     }
 
     if (ctl->newfile)
-        if (vah_add_file(&buf, ctl->newfile, "rw") != 0)
+        if (vah_add_file(&buf, ctl->newfile, "rwk") != 0)
             goto cleanup;
 
     if (virBufferError(&buf)) {
@@ -1336,7 +1341,7 @@ main(int argc, char **argv)
             vah_error(ctl, 1, _("profile exists"));
 
         if (ctl->append && ctl->newfile) {
-            if (vah_add_file(&buf, ctl->newfile, "rw") != 0)
+            if (vah_add_file(&buf, ctl->newfile, "rwk") != 0)
                 goto cleanup;
         } else {
             if (ctl->def->virtType == VIR_DOMAIN_VIRT_QEMU ||

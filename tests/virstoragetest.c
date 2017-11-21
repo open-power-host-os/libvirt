@@ -111,7 +111,6 @@ testStorageFileGetMetadata(const char *path,
     if (stat(path, &st) == 0) {
         if (S_ISDIR(st.st_mode)) {
             ret->type = VIR_STORAGE_TYPE_DIR;
-            ret->format = VIR_STORAGE_FILE_DIR;
         } else if (S_ISBLK(st.st_mode)) {
             ret->type = VIR_STORAGE_TYPE_BLOCK;
         }
@@ -357,7 +356,7 @@ testStorageChain(const void *args)
     }
 
     elt = meta;
-    while (elt) {
+    while (virStorageSourceIsBacking(elt)) {
         char *expect = NULL;
         char *actual = NULL;
 
@@ -581,6 +580,7 @@ testPathRelativePrepare(void)
     size_t i;
 
     for (i = 0; i < ARRAY_CARDINALITY(backingchain); i++) {
+        backingchain[i].type = VIR_STORAGE_TYPE_FILE;
         if (i < ARRAY_CARDINALITY(backingchain) - 1)
             backingchain[i].backingStore = &backingchain[i + 1];
         else
@@ -963,7 +963,15 @@ mymain(void)
         .type = VIR_STORAGE_TYPE_DIR,
         .format = VIR_STORAGE_FILE_DIR,
     };
-    TEST_CHAIN(absdir, VIR_STORAGE_FILE_AUTO,
+    testFileData dir_as_raw = {
+        .path = canondir,
+        .type = VIR_STORAGE_TYPE_DIR,
+        .format = VIR_STORAGE_FILE_RAW,
+    };
+    TEST_CHAIN(absdir, VIR_STORAGE_FILE_RAW,
+               (&dir_as_raw), EXP_PASS,
+               (&dir_as_raw), ALLOW_PROBE | EXP_PASS);
+    TEST_CHAIN(absdir, VIR_STORAGE_FILE_NONE,
                (&dir), EXP_PASS,
                (&dir), ALLOW_PROBE | EXP_PASS);
     TEST_CHAIN(absdir, VIR_STORAGE_FILE_DIR,
@@ -1354,6 +1362,9 @@ mymain(void)
     TEST_BACKING_PARSE("rbd:testshare:id=asdf:mon_host=example.com",
                        "<source protocol='rbd' name='testshare'>\n"
                        "  <host name='example.com'/>\n"
+                       "  <auth username='asdf'>\n"
+                       "    <secret type='ceph'/>\n"
+                       "  </auth>\n"
                        "</source>\n");
     TEST_BACKING_PARSE("nbd:example.org:6000:exportname=blah",
                        "<source protocol='nbd' name='blah'>\n"
@@ -1519,6 +1530,9 @@ mymain(void)
                             "}",
                        "<source protocol='rbd' name='testshare'>\n"
                        "  <host name='example.com'/>\n"
+                       "  <auth username='asdf'>\n"
+                       "    <secret type='ceph'/>\n"
+                       "  </auth>\n"
                        "</source>\n");
     TEST_BACKING_PARSE("json:{\"file\":{\"driver\":\"rbd\","
                                        "\"image\":\"test\","
@@ -1584,6 +1598,17 @@ mymain(void)
                                         "\"vdi\": \"Alice\"}}",
                        "<source protocol='sheepdog' name='Alice'>\n"
                        "  <host name='10.10.10.10' port='7000'/>\n"
+                       "</source>\n");
+    TEST_BACKING_PARSE("json:{\"file\":{\"driver\":\"vxhs\","
+                                       "\"vdisk-id\":\"c6718f6b-0401-441d-a8c3-1f0064d75ee0\","
+                                       "\"server\": { \"type\":\"tcp\","
+                                                      "\"host\":\"example.com\","
+                                                      "\"port\":\"9999\""
+                                                   "}"
+                                      "}"
+                            "}",
+                       "<source protocol='vxhs' name='c6718f6b-0401-441d-a8c3-1f0064d75ee0'>\n"
+                       "  <host name='example.com' port='9999'/>\n"
                        "</source>\n");
 #endif /* WITH_YAJL */
 

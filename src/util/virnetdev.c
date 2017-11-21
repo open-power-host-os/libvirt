@@ -59,6 +59,10 @@
 # include <net/if_dl.h>
 #endif
 
+#if HAVE_LINUX_DEVLINK_H
+# include <linux/devlink.h>
+#endif
+
 #ifndef IFNAMSIZ
 # define IFNAMSIZ 16
 #endif
@@ -1170,6 +1174,46 @@ virNetDevGetPCIDevice(const char *devName)
 
 
 /**
+ * virNetDevGetPhysPortID:
+ *
+ * @ifname: name of a netdev
+ *
+ * @physPortID: pointer to char* that will receive @ifname's
+ *              phys_port_id from sysfs (null terminated
+ *              string). Could be NULL if @ifname's net driver doesn't
+ *              support phys_port_id (most netdev drivers
+ *              don't). Caller is responsible for freeing the string
+ *              when finished.
+ *
+ * Returns 0 on success or -1 on failure.
+ */
+int
+virNetDevGetPhysPortID(const char *ifname,
+                       char **physPortID)
+{
+    int ret = -1;
+    char *physPortIDFile = NULL;
+
+    *physPortID = NULL;
+
+    if (virNetDevSysfsFile(&physPortIDFile, ifname, "phys_port_id") < 0)
+        goto cleanup;
+
+    /* a failure to read just means the driver doesn't support
+     * phys_port_id, so set success now and ignore the return from
+     * virFileReadAllQuiet().
+     */
+    ret = 0;
+
+    ignore_value(virFileReadAllQuiet(physPortIDFile, 1024, physPortID));
+
+ cleanup:
+    VIR_FREE(physPortIDFile);
+    return ret;
+}
+
+
+/**
  * virNetDevGetVirtualFunctions:
  *
  * @pfname : name of the physical function interface name
@@ -1191,13 +1235,17 @@ virNetDevGetVirtualFunctions(const char *pfname,
     char *pf_sysfs_device_link = NULL;
     char *pci_sysfs_device_link = NULL;
     char *pciConfigAddr = NULL;
+    char *pfPhysPortID = NULL;
 
     *virt_fns = NULL;
     *n_vfname = 0;
     *max_vfs = 0;
 
+    if (virNetDevGetPhysPortID(pfname, &pfPhysPortID) < 0)
+        goto cleanup;
+
     if (virNetDevSysfsFile(&pf_sysfs_device_link, pfname, "device") < 0)
-        return ret;
+        goto cleanup;
 
     if (virPCIGetVirtualFunctions(pf_sysfs_device_link, virt_fns,
                                   n_vfname, max_vfs) < 0)
@@ -1222,8 +1270,10 @@ virNetDevGetVirtualFunctions(const char *pfname,
             goto cleanup;
         }
 
-        if (virPCIGetNetName(pci_sysfs_device_link, &((*vfname)[i])) < 0)
+        if (virPCIGetNetName(pci_sysfs_device_link, 0,
+                             pfPhysPortID, &((*vfname)[i])) < 0) {
             goto cleanup;
+        }
 
         if (!(*vfname)[i])
             VIR_INFO("VF does not have an interface name");
@@ -1236,6 +1286,7 @@ virNetDevGetVirtualFunctions(const char *pfname,
         VIR_FREE(*vfname);
         VIR_FREE(*virt_fns);
     }
+    VIR_FREE(pfPhysPortID);
     VIR_FREE(pf_sysfs_device_link);
     VIR_FREE(pci_sysfs_device_link);
     VIR_FREE(pciConfigAddr);
@@ -1317,13 +1368,19 @@ int
 virNetDevGetPhysicalFunction(const char *ifname, char **pfname)
 {
     char *physfn_sysfs_path = NULL;
+    char *vfPhysPortID = NULL;
     int ret = -1;
 
-    if (virNetDevSysfsDeviceFile(&physfn_sysfs_path, ifname, "physfn") < 0)
-        return ret;
-
-    if (virPCIGetNetName(physfn_sysfs_path, pfname) < 0)
+    if (virNetDevGetPhysPortID(ifname, &vfPhysPortID) < 0)
         goto cleanup;
+
+    if (virNetDevSysfsDeviceFile(&physfn_sysfs_path, ifname, "physfn") < 0)
+        goto cleanup;
+
+    if (virPCIGetNetName(physfn_sysfs_path, 0,
+                         vfPhysPortID, pfname) < 0) {
+        goto cleanup;
+    }
 
     if (!*pfname) {
         /* this shouldn't be possible. A VF can't exist unless its
@@ -1337,6 +1394,7 @@ virNetDevGetPhysicalFunction(const char *ifname, char **pfname)
 
     ret = 0;
  cleanup:
+    VIR_FREE(vfPhysPortID);
     VIR_FREE(physfn_sysfs_path);
     return ret;
 }
@@ -1364,7 +1422,15 @@ virNetDevPFGetVF(const char *pfname, int vf, char **vfname)
 {
     char *virtfnName = NULL;
     char *virtfnSysfsPath = NULL;
+    char *pfPhysPortID = NULL;
     int ret = -1;
+
+    /* a VF may have multiple "ports", each one having its own netdev,
+     * and each netdev having a different phys_port_id. Be sure we get
+     * the VF netdev with a phys_port_id matchine that of pfname
+     */
+    if (virNetDevGetPhysPortID(pfname, &pfPhysPortID) < 0)
+        goto cleanup;
 
     if (virAsprintf(&virtfnName, "virtfn%d", vf) < 0)
         goto cleanup;
@@ -1382,11 +1448,12 @@ virNetDevPFGetVF(const char *pfname, int vf, char **vfname)
      * isn't bound to a netdev driver, it won't have a netdev name,
      * and vfname will be NULL).
      */
-    ret = virPCIGetNetName(virtfnSysfsPath, vfname);
+    ret = virPCIGetNetName(virtfnSysfsPath, 0, pfPhysPortID, vfname);
 
  cleanup:
     VIR_FREE(virtfnName);
     VIR_FREE(virtfnSysfsPath);
+    VIR_FREE(pfPhysPortID);
 
     return ret;
 }
@@ -1432,6 +1499,17 @@ virNetDevGetVirtualFunctionInfo(const char *vfname, char **pfname,
 }
 
 #else /* !__linux__ */
+int
+virNetDevGetPhysPortID(const char *ifname ATTRIBUTE_UNUSED,
+                       char **physPortID)
+{
+    /* this actually should never be called, and is just here to
+     * satisfy the linker.
+     */
+    *physPortID = NULL;
+    return 0;
+}
+
 int
 virNetDevGetVirtualFunctions(const char *pfname ATTRIBUTE_UNUSED,
                              char ***vfname ATTRIBUTE_UNUSED,
@@ -1804,8 +1882,9 @@ virNetDevSaveNetConfig(const char *linkdev, int vf,
             goto cleanup;
 
         linkdev = vfDevOrig;
+        saveVlan = true;
 
-    } else if (saveVlan && virNetDevIsVirtualFunction(linkdev) == 1) {
+    } else if (virNetDevIsVirtualFunction(linkdev) == 1) {
         /* when vf is -1, linkdev might be a standard netdevice (not
          * SRIOV), or it might be an SRIOV VF. If it's a VF, normalize
          * it to PF + VFname
@@ -1820,6 +1899,34 @@ virNetDevSaveNetConfig(const char *linkdev, int vf,
             goto cleanup;
     }
 
+    if (pfDevName) {
+        bool pfIsOnline;
+
+        /* Assure that PF is online before trying to use it to set
+         * anything up for this VF. It *should* be online already,
+         * but if it isn't online the changes made to the VF via the
+         * PF won't take effect, yet there will be no error
+         * reported. In the case that the PF isn't online, we need to
+         * fail and report the error, rather than automatically
+         * setting it online, since setting an unconfigured interface
+         * online automatically turns on IPv6 autoconfig, which may
+         * not be what the admin expects, so we require them to
+         * explicitly enable the PF in the host system network config.
+         */
+        if (virNetDevGetOnline(pfDevName, &pfIsOnline) < 0)
+            goto cleanup;
+
+        if (!pfIsOnline) {
+            virReportError(VIR_ERR_INTERNAL_ERROR,
+                           _("Unable to configure VF %d of PF '%s' "
+                             "because the PF is not online. Please "
+                             "change host network config to put the "
+                             "PF online."),
+                           vf, pfDevName);
+            goto cleanup;
+        }
+    }
+
     if (!(configJSON = virJSONValueNewObject()))
         goto cleanup;
 
@@ -1828,15 +1935,13 @@ virNetDevSaveNetConfig(const char *linkdev, int vf,
      * on the host)
      */
 
-    if (pfDevName) {
+    if (pfDevName && saveVlan) {
         if (virAsprintf(&filePath, "%s/%s_vf%d", stateDir, pfDevName, vf) < 0)
             goto cleanup;
 
         /* get admin MAC and vlan tag */
-        if (virNetDevGetVfConfig(pfDevName, vf, &oldMAC,
-                                 saveVlan ? &oldVlanTag : NULL) < 0) {
+        if (virNetDevGetVfConfig(pfDevName, vf, &oldMAC, &oldVlanTag) < 0)
             goto cleanup;
-        }
 
         if (virJSONValueObjectAppendString(configJSON,
                                            VIR_NETDEV_KEYNAME_ADMIN_MAC,
@@ -1897,7 +2002,9 @@ virNetDevSaveNetConfig(const char *linkdev, int vf,
  * @linkdev:@vf from a file in @stateDir. (see virNetDevSaveNetConfig
  * for details of file name and format).
  *
- * Returns 0 on success, -1 on failure.
+ * Returns 0 on success, -1 on failure. It is *NOT* considered failure
+ * if no file is found to read. In that case, adminMAC, vlan, and MAC
+ * are set to NULL, and success is returned.
  *
  * The caller MUST free adminMAC, vlan, and MAC when it is finished
  * with them (they will be NULL if they weren't found in the file)
@@ -1962,8 +2069,8 @@ virNetDevReadNetConfig(const char *linkdev, int vf,
         if (linkdev && !virFileExists(filePath)) {
             /* the device may have been stored in a file named for the
              * VF due to saveVlan == false (or an older version of
-             * libvirt), so reset filePath so we'll try the other
-             * filename before failing.
+             * libvirt), so reset filePath and pfDevName so we'll try
+             * the other filename.
              */
             VIR_FREE(filePath);
             pfDevName = NULL;
@@ -1973,6 +2080,14 @@ virNetDevReadNetConfig(const char *linkdev, int vf,
     if (!pfDevName) {
         if (virAsprintf(&filePath, "%s/%s", stateDir, linkdev) < 0)
             goto cleanup;
+    }
+
+    if (!virFileExists(filePath)) {
+        /* having no file to read is not necessarily an error, so we
+         * just return success, but with MAC, adminMAC, and vlan set to NULL
+         */
+        ret = 0;
+        goto cleanup;
     }
 
     if (virFileReadAll(filePath, 128, &fileStr) < 0)
@@ -2167,32 +2282,6 @@ virNetDevSetNetConfig(const char *linkdev, int vf,
         }
 
     } else {
-        bool pfIsOnline;
-
-        /* Assure that PF is online before trying to use it to set
-         * anything up for this VF. It *should* be online already,
-         * but if it isn't online the changes made to the VF via the
-         * PF won't take effect, yet there will be no error
-         * reported. In the case that the PF isn't online, we need to
-         * fail and report the error, rather than automatically
-         * setting it online, since setting an unconfigured interface
-         * online automatically turns on IPv6 autoconfig, which may
-         * not be what the admin expects, so we require them to
-         * explicitly enable the PF in the host system network config.
-         */
-        if (virNetDevGetOnline(pfDevName, &pfIsOnline) < 0)
-            goto cleanup;
-
-        if (!pfIsOnline) {
-            virReportError(VIR_ERR_INTERNAL_ERROR,
-                           _("Unable to configure VF %d of PF '%s' "
-                             "because the PF is not online. Please "
-                             "change host network config to put the "
-                             "PF online."),
-                           vf, pfDevName);
-            goto cleanup;
-        }
-
         if (vlan) {
             if (vlan->nTags != 1 || vlan->trunk) {
                 virReportError(VIR_ERR_CONFIG_UNSUPPORTED, "%s",
@@ -2396,7 +2485,8 @@ VIR_ENUM_IMPL(virNetDevFeature,
               "ntuple",
               "rxhash",
               "rdma",
-              "txudptnl")
+              "txudptnl",
+              "switchdev")
 
 #ifdef __linux__
 int
@@ -3030,6 +3120,184 @@ virNetDevGetEthtoolFeatures(virBitmapPtr bitmap,
 }
 
 
+# if HAVE_DECL_DEVLINK_CMD_ESWITCH_GET
+/**
+ * virNetDevPutExtraHeader
+ * reserve and prepare room for an extra header
+ * This function sets to zero the room that is required to put the extra
+ * header after the initial Netlink header. This function also increases
+ * the nlmsg_len field.
+ *
+ * @nlh: pointer to Netlink header
+ * @size: size of the extra header that we want to put
+ *
+ * Returns pointer to the start of the extended header
+ */
+static void *
+virNetDevPutExtraHeader(struct nlmsghdr *nlh,
+                        size_t size)
+{
+    char *ptr = (char *)nlh + nlh->nlmsg_len;
+    size_t len = NLMSG_ALIGN(size);
+    nlh->nlmsg_len += len;
+    return ptr;
+}
+
+
+/**
+ * virNetDevGetFamilyId:
+ * This function supplies the devlink family id
+ *
+ * @family_name: the name of the family to query
+ *
+ * Returns family id or 0 on failure.
+ */
+static uint32_t
+virNetDevGetFamilyId(const char *family_name)
+{
+    struct nl_msg *nl_msg = NULL;
+    struct nlmsghdr *resp = NULL;
+    struct genlmsghdr* gmsgh = NULL;
+    struct nlattr *tb[CTRL_ATTR_MAX + 1] = {NULL, };
+    unsigned int recvbuflen;
+    uint32_t family_id = 0;
+
+    if (!(nl_msg = nlmsg_alloc_simple(GENL_ID_CTRL,
+                                      NLM_F_REQUEST | NLM_F_ACK))) {
+        virReportOOMError();
+        goto cleanup;
+    }
+
+    if (!(gmsgh = virNetDevPutExtraHeader(nlmsg_hdr(nl_msg), sizeof(struct genlmsghdr))))
+        goto cleanup;
+
+    gmsgh->cmd = CTRL_CMD_GETFAMILY;
+    gmsgh->version = DEVLINK_GENL_VERSION;
+
+    if (nla_put_string(nl_msg, CTRL_ATTR_FAMILY_NAME, family_name) < 0) {
+        virReportError(VIR_ERR_INTERNAL_ERROR, "%s",
+                       _("allocated netlink buffer is too small"));
+        goto cleanup;
+    }
+
+    if (virNetlinkCommand(nl_msg, &resp, &recvbuflen, 0, 0, NETLINK_GENERIC, 0) < 0)
+        goto cleanup;
+
+    if (nlmsg_parse(resp, sizeof(struct nlmsghdr), tb, CTRL_ATTR_MAX, NULL) < 0) {
+        virReportError(VIR_ERR_INTERNAL_ERROR, "%s",
+                       _("malformed netlink response message"));
+        goto cleanup;
+    }
+
+    if (tb[CTRL_ATTR_FAMILY_ID] == NULL)
+        goto cleanup;
+
+    family_id = *(uint32_t *)RTA_DATA(tb[CTRL_ATTR_FAMILY_ID]);
+
+ cleanup:
+    nlmsg_free(nl_msg);
+    VIR_FREE(resp);
+    return family_id;
+}
+
+
+/**
+ * virNetDevSwitchdevFeature
+ * This function checks for the availability of Switchdev feature
+ * and add it to bitmap
+ *
+ * @ifname: name of the interface
+ * @out: add Switchdev feature if exist to bitmap
+ *
+ * Returns 0 on success, -1 on failure.
+ */
+static int
+virNetDevSwitchdevFeature(const char *ifname,
+                          virBitmapPtr *out)
+{
+    struct nl_msg *nl_msg = NULL;
+    struct nlmsghdr *resp = NULL;
+    unsigned int recvbuflen;
+    struct nlattr *tb[DEVLINK_ATTR_MAX + 1] = {NULL, };
+    virPCIDevicePtr pci_device_ptr = NULL;
+    struct genlmsghdr* gmsgh = NULL;
+    const char *pci_name;
+    char *pfname = NULL;
+    int is_vf = -1;
+    int ret = -1;
+    uint32_t family_id;
+
+    if ((family_id = virNetDevGetFamilyId(DEVLINK_GENL_NAME)) <= 0)
+        return ret;
+
+    if ((is_vf = virNetDevIsVirtualFunction(ifname)) < 0)
+        return ret;
+
+    if (is_vf == 1 && virNetDevGetPhysicalFunction(ifname, &pfname) < 0)
+        goto cleanup;
+
+    pci_device_ptr = pfname ? virNetDevGetPCIDevice(pfname) :
+                              virNetDevGetPCIDevice(ifname);
+    /* No PCI device, then no feature bit to check/add */
+    if (pci_device_ptr == NULL) {
+        ret = 0;
+        goto cleanup;
+    }
+
+    if (!(nl_msg = nlmsg_alloc_simple(family_id,
+                                      NLM_F_REQUEST | NLM_F_ACK))) {
+        virReportOOMError();
+        goto cleanup;
+    }
+
+    if (!(gmsgh = virNetDevPutExtraHeader(nlmsg_hdr(nl_msg), sizeof(struct genlmsghdr))))
+        goto cleanup;
+
+    gmsgh->cmd = DEVLINK_CMD_ESWITCH_GET;
+    gmsgh->version = DEVLINK_GENL_VERSION;
+
+    pci_name = virPCIDeviceGetName(pci_device_ptr);
+
+    if (nla_put(nl_msg, DEVLINK_ATTR_BUS_NAME, strlen("pci")+1, "pci") < 0 ||
+        nla_put(nl_msg, DEVLINK_ATTR_DEV_NAME, strlen(pci_name)+1, pci_name) < 0) {
+        virReportError(VIR_ERR_INTERNAL_ERROR, "%s",
+                       _("allocated netlink buffer is too small"));
+        goto cleanup;
+    }
+
+    if (virNetlinkCommand(nl_msg, &resp, &recvbuflen, 0, 0, NETLINK_GENERIC, 0) < 0)
+        goto cleanup;
+
+    if (nlmsg_parse(resp, sizeof(struct genlmsghdr), tb, DEVLINK_ATTR_MAX, NULL) < 0) {
+        virReportError(VIR_ERR_INTERNAL_ERROR, "%s",
+                       _("malformed netlink response message"));
+        goto cleanup;
+    }
+
+    if (tb[DEVLINK_ATTR_ESWITCH_MODE] &&
+        *(int *)RTA_DATA(tb[DEVLINK_ATTR_ESWITCH_MODE]) == DEVLINK_ESWITCH_MODE_SWITCHDEV) {
+        ignore_value(virBitmapSetBit(*out, VIR_NET_DEV_FEAT_SWITCHDEV));
+    }
+
+    ret = 0;
+
+ cleanup:
+    nlmsg_free(nl_msg);
+    virPCIDeviceFree(pci_device_ptr);
+    VIR_FREE(resp);
+    VIR_FREE(pfname);
+    return ret;
+}
+# else
+static int
+virNetDevSwitchdevFeature(const char *ifname ATTRIBUTE_UNUSED,
+                          virBitmapPtr *out ATTRIBUTE_UNUSED)
+{
+    return 0;
+}
+# endif
+
+
 # if HAVE_DECL_ETHTOOL_GFEATURES
 /**
  * virNetDevGFeatureAvailable
@@ -3228,6 +3496,9 @@ virNetDevGetFeatures(const char *ifname,
         goto cleanup;
 
     if (virNetDevRDMAFeature(ifname, out) < 0)
+        goto cleanup;
+
+    if (virNetDevSwitchdevFeature(ifname, out) < 0)
         goto cleanup;
 
     ret = 0;

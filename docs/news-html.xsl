@@ -8,7 +8,7 @@
 
   <!-- Document -->
   <xsl:template match="/libvirt">
-    <xsl:text disable-output-escaping="yes">&lt;!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"&gt;
+    <xsl:text disable-output-escaping="yes">&lt;!DOCTYPE html&gt;
 </xsl:text>
     <html xmlns="http://www.w3.org/1999/xhtml">
       <head>
@@ -25,7 +25,7 @@
         <p>This is the list of official releases for libvirt, along with an
         overview of the changes introduced by each of them.</p>
         <p>For a more fine-grained view, use the
-        <a href="http://libvirt.org/git/?p=libvirt.git;a=log">git log</a>.
+        <a href="https://libvirt.org/git/?p=libvirt.git;a=log">git log</a>.
         </p>
         <xsl:apply-templates select="release"/>
         <p>Older libvirt releases didn't have proper release notes,

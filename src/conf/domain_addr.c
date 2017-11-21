@@ -686,7 +686,7 @@ virDomainPCIAddressEnsureAddr(virDomainPCIAddressSetPtr addrs,
 }
 
 
-int
+void
 virDomainPCIAddressReleaseAddr(virDomainPCIAddressSetPtr addrs,
                                virPCIDeviceAddressPtr addr)
 {
@@ -694,7 +694,6 @@ virDomainPCIAddressReleaseAddr(virDomainPCIAddressSetPtr addrs,
      * already had it, and are giving it back.
      */
     virDomainPCIConnectFlags flags = VIR_PCI_CONNECT_TYPES_MASK;
-    int ret = -1;
     char *addrStr = NULL;
 
     if (!(addrStr = virDomainPCIAddressAsString(addr)))
@@ -708,10 +707,8 @@ virDomainPCIAddressReleaseAddr(virDomainPCIAddressSetPtr addrs,
     else
         addrs->buses[addr->bus].slot[addr->slot].functions &= ~(1 << addr->function);
 
-    ret = 0;
  cleanup:
     VIR_FREE(addrStr);
-    return ret;
 }
 
 virDomainPCIAddressSetPtr

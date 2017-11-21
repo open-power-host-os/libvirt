@@ -99,6 +99,7 @@ EXTRA_DIST =		\
 	genericxml2xmlindata \
 	genericxml2xmloutdata \
 	interfaceschemadata \
+	libxlxml2domconfigdata \
 	lxcconf2xmldata \
 	lxcxml2xmldata \
 	lxcxml2xmloutdata \
@@ -271,7 +272,8 @@ test_programs += xml2sexprtest sexpr2xmltest \
 endif WITH_XEN
 
 if WITH_LIBXL
-test_programs += xlconfigtest
+test_programs += xlconfigtest libxlxml2domconfigtest
+test_libraries += virmocklibxl.la
 endif WITH_LIBXL
 
 if WITH_QEMU
@@ -528,8 +530,20 @@ xlconfigtest_SOURCES = \
 	xlconfigtest.c testutilsxen.c testutilsxen.h \
 	testutils.c testutils.h
 xlconfigtest_LDADD =$(libxl_LDADDS)
+
+libxlxml2domconfigtest_SOURCES = \
+	libxlxml2domconfigtest.c testutilsxen.c testutilsxen.h \
+	testutils.c testutils.h
+libxlxml2domconfigtest_LDADD = $(libxl_LDADDS) $(LIBXML_LIBS)
+
+virmocklibxl_la_SOURCES = \
+	virmocklibxl.c
+virmocklibxl_la_CFLAGS = $(AM_CFLAGS)
+virmocklibxl_la_LDFLAGS = $(MOCKLIBS_LDFLAGS)
+virmocklibxl_la_LIBADD = $(MOCKLIBS_LIBS)
+
 else ! WITH_LIBXL
-EXTRA_DIST += xlconfigtest.c
+EXTRA_DIST += xlconfigtest.c libxlxml2domconfigtest.c
 endif ! WITH_LIBXL
 
 QEMUMONITORTESTUTILS_SOURCES = \
@@ -871,7 +885,10 @@ storagevolxml2argvtest_SOURCES = \
     testutils.c testutils.h
 storagevolxml2argvtest_LDADD = \
 	$(LIBXML_LIBS) \
-	../src/libvirt_driver_storage_impl.la $(LDADDS)
+	../src/libvirt_driver_storage_impl.la \
+	../src/libvirt_conf.la \
+	../src/libvirt_util.la \
+	$(LDADDS)
 
 else ! WITH_STORAGE
 EXTRA_DIST += storagevolxml2argvtest.c
@@ -929,12 +946,14 @@ commandtest_SOURCES = \
 	commandtest.c testutils.h testutils.c
 commandtest_LDADD = $(LDADDS)
 
+# Must not link to any libvirt modules - libc / gnulib only
+# otherwise external libraries might unexpectedly leak
+# file descriptors into commandhelper invalidating the
+# test logic assumptions
 commandhelper_SOURCES = \
 	commandhelper.c
 commandhelper_LDADD = \
 	$(NO_INDIRECT_LDFLAGS) \
-	$(PROBES_O) \
-	../src/libvirt_util.la \
 	$(GNULIB_LIBS)
 
 commandhelper_LDFLAGS = -static

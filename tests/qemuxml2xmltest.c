@@ -34,6 +34,7 @@ struct testInfo {
     char *outInactiveName;
 
     virBitmapPtr activeVcpus;
+    bool blockjobs;
 
     virQEMUCapsPtr qemuCaps;
 };
@@ -43,10 +44,21 @@ qemuXML2XMLActivePreFormatCallback(virDomainDefPtr def,
                                    const void *opaque)
 {
     struct testInfo *info = (struct testInfo *) opaque;
+    size_t i;
 
     /* store vCPU bitmap so that the status XML can be created faithfully */
     if (!info->activeVcpus)
         info->activeVcpus = virDomainDefGetOnlineVcpumap(def);
+
+    info->blockjobs = false;
+
+    /* remember whether we have mirror jobs */
+    for (i = 0; i < def->ndisks; i++) {
+        if (def->disks[i]->mirror) {
+            info->blockjobs = true;
+            break;
+        }
+    }
 
     return 0;
 }
@@ -81,23 +93,24 @@ static const char testStatusXMLPrefixHeader[] =
 "  <taint flag='high-privileges'/>\n"
 "  <monitor path='/var/lib/libvirt/qemu/test.monitor' json='1' type='unix'/>\n";
 
-static const char testStatusXMLPrefixFooter[] =
-"  <qemuCaps>\n"
-"    <flag name='vnet-hdr'/>\n"
-"    <flag name='qxl.vgamem_mb'/>\n"
-"    <flag name='qxl-vga.vgamem_mb'/>\n"
-"    <flag name='pc-dimm'/>\n"
-"  </qemuCaps>\n"
-"  <devices>\n"
-"    <device alias='balloon0'/>\n"
-"    <device alias='video0'/>\n"
-"    <device alias='serial0'/>\n"
-"    <device alias='net0'/>\n"
-"    <device alias='usb'/>\n"
-"  </devices>\n"
-"  <numad nodeset='0-2' cpuset='1,3'/>\n"
-"  <libDir path='/tmp'/>\n"
-"  <channelTargetDir path='/tmp/channel'/>\n";
+static const char testStatusXMLPrefixBodyStatic[] =
+"<qemuCaps>\n"
+"  <flag name='vnet-hdr'/>\n"
+"  <flag name='qxl.vgamem_mb'/>\n"
+"  <flag name='qxl-vga.vgamem_mb'/>\n"
+"  <flag name='pc-dimm'/>\n"
+"</qemuCaps>\n"
+"<devices>\n"
+"  <device alias='balloon0'/>\n"
+"  <device alias='video0'/>\n"
+"  <device alias='serial0'/>\n"
+"  <device alias='net0'/>\n"
+"  <device alias='usb'/>\n"
+"</devices>\n"
+"<numad nodeset='0-2' cpuset='1,3'/>\n"
+"<libDir path='/tmp'/>\n"
+"<channelTargetDir path='/tmp/channel'/>\n"
+"<allowReboot value='yes'/>\n";
 
 static const char testStatusXMLSuffix[] =
 "</domstatus>\n";
@@ -124,6 +137,15 @@ testGetStatuXMLPrefixVcpus(virBufferPtr buf,
 }
 
 
+static void
+testGetStatusXMLAddBlockjobs(virBufferPtr buf,
+                             const struct testInfo *data)
+{
+    virBufferAsprintf(buf, "<blockjobs active='%s'/>\n",
+                      virTristateBoolTypeToString(virTristateBoolFromBool(data->blockjobs)));
+}
+
+
 static char *
 testGetStatusXMLPrefix(const struct testInfo *data)
 {
@@ -134,10 +156,30 @@ testGetStatusXMLPrefix(const struct testInfo *data)
 
     testGetStatuXMLPrefixVcpus(&buf, data);
 
+    virBufferAddStr(&buf, testStatusXMLPrefixBodyStatic);
+
+    testGetStatusXMLAddBlockjobs(&buf, data);
+
     virBufferAdjustIndent(&buf, -2);
-    virBufferAdd(&buf, testStatusXMLPrefixFooter, -1);
 
     return virBufferContentAndReset(&buf);
+}
+
+
+static int
+testProcessStatusXML(virDomainObjPtr vm)
+{
+    size_t i;
+
+    /* fix the private 'blockjob' flag for disks */
+    for (i = 0; i < vm->def->ndisks; i++) {
+        virDomainDiskDefPtr disk = vm->def->disks[i];
+        qemuDomainDiskPrivatePtr diskPriv = QEMU_DOMAIN_DISK_PRIVATE(disk);
+
+        diskPriv->blockjob = !!disk->mirror;
+    }
+
+    return 0;
 }
 
 
@@ -198,6 +240,10 @@ testCompareStatusXMLToXMLFiles(const void *opaque)
         VIR_TEST_DEBUG("Failed to parse domain status XML:\n%s", source);
         goto cleanup;
     }
+
+    /* process the definition if necessary */
+    if (testProcessStatusXML(obj) < 0)
+        goto cleanup;
 
     /* format it back */
     if (!(actual = virDomainObjFormat(driver.xmlopt, obj, NULL,
@@ -433,6 +479,7 @@ mymain(void)
     DO_TEST("hugepages-pages4", NONE);
     DO_TEST("hugepages-pages5", NONE);
     DO_TEST("hugepages-pages6", NONE);
+    DO_TEST("hugepages-pages7", NONE);
     DO_TEST("hugepages-shared", NONE);
     DO_TEST("hugepages-memaccess", NONE);
     DO_TEST("hugepages-memaccess2", NONE);
@@ -448,6 +495,7 @@ mymain(void)
     DO_TEST("disk-usb-device", NONE);
     DO_TEST("disk-virtio", NONE);
     DO_TEST("floppy-drive-fat", NONE);
+    DO_TEST("disk-virtio-drive-queues", QEMU_CAPS_VIRTIO_BLK_NUM_QUEUES);
     DO_TEST("disk-drive-boot-disk", NONE);
     DO_TEST("disk-drive-boot-cdrom", NONE);
     DO_TEST("disk-drive-error-policy-stop", NONE);
@@ -472,7 +520,10 @@ mymain(void)
     DO_TEST("disk-drive-network-rbd-auth", NONE);
     DO_TEST("disk-drive-network-rbd-ipv6", NONE);
     DO_TEST("disk-drive-network-rbd-ceph-env", NONE);
+    DO_TEST("disk-drive-network-source-auth", NONE);
     DO_TEST("disk-drive-network-sheepdog", NONE);
+    DO_TEST("disk-drive-network-vxhs", NONE);
+    DO_TEST("disk-drive-network-tlsx509-vxhs", NONE);
     DO_TEST("disk-scsi-device",
             QEMU_CAPS_NODEFCONFIG, QEMU_CAPS_SCSI_LSI);
     DO_TEST("disk-scsi-vscsi", NONE);
@@ -530,6 +581,7 @@ mymain(void)
     DO_TEST("misc-uuid", NONE);
     DO_TEST("net-vhostuser", NONE);
     DO_TEST("net-user", NONE);
+    DO_TEST("net-user-addr", QEMU_CAPS_NETDEV);
     DO_TEST("net-virtio", NONE);
     DO_TEST("net-virtio-device", NONE);
     DO_TEST("net-virtio-disable-offloads", NONE);
@@ -537,7 +589,7 @@ mymain(void)
     DO_TEST("net-eth-ifname", NONE);
     DO_TEST("net-eth-hostip", NONE);
     DO_TEST("net-virtio-network-portgroup", NONE);
-    DO_TEST("net-virtio-rxqueuesize", NONE);
+    DO_TEST("net-virtio-rxtxqueuesize", NONE);
     DO_TEST("net-hostdev", NONE);
     DO_TEST("net-hostdev-vfio", NONE);
     DO_TEST("net-midonet", NONE);
@@ -573,6 +625,7 @@ mymain(void)
     DO_TEST("encrypted-disk", NONE);
     DO_TEST("encrypted-disk-usage", NONE);
     DO_TEST("luks-disks", NONE);
+    DO_TEST("luks-disks-source", NONE);
     DO_TEST("memtune", NONE);
     DO_TEST("memtune-unlimited", NONE);
     DO_TEST("blkiotune", NONE);
@@ -1127,6 +1180,16 @@ mymain(void)
             QEMU_CAPS_DEVICE_PCI_BRIDGE,
             QEMU_CAPS_DEVICE_DMI_TO_PCI_BRIDGE,
             QEMU_CAPS_DEVICE_PCIE_ROOT_PORT);
+    DO_TEST("aarch64-video-default",
+            QEMU_CAPS_NODEFCONFIG,
+            QEMU_CAPS_OBJECT_GPEX,
+            QEMU_CAPS_DEVICE_PCI_BRIDGE,
+            QEMU_CAPS_DEVICE_IOH3420,
+            QEMU_CAPS_PCI_MULTIFUNCTION,
+            QEMU_CAPS_DEVICE_VIDEO_PRIMARY,
+            QEMU_CAPS_DEVICE_VIRTIO_GPU,
+            QEMU_CAPS_DEVICE_DMI_TO_PCI_BRIDGE,
+            QEMU_CAPS_VNC);
 
     DO_TEST_FULL("aarch64-gic-none", WHEN_BOTH, GIC_NONE, NONE);
     DO_TEST_FULL("aarch64-gic-none-v2", WHEN_BOTH, GIC_V2, NONE);
@@ -1186,7 +1249,6 @@ mymain(void)
     DO_TEST("intel-iommu-machine",
             QEMU_CAPS_MACHINE_OPT,
             QEMU_CAPS_MACHINE_IOMMU);
-    DO_TEST("intel-iommu-ioapic", NONE);
     DO_TEST("intel-iommu-caching-mode", NONE);
     DO_TEST("intel-iommu-eim", NONE);
     DO_TEST("intel-iommu-device-iotlb", NONE);
@@ -1198,6 +1260,18 @@ mymain(void)
     DO_TEST("cpu-check-default-none2", NONE);
     DO_TEST("cpu-check-default-partial", NONE);
     DO_TEST("cpu-check-default-partial2", NONE);
+
+    DO_TEST("smartcard-host", NONE);
+    DO_TEST("smartcard-host-certificates", NONE);
+    DO_TEST("smartcard-passthrough-tcp", NONE);
+    DO_TEST("smartcard-passthrough-spicevmc", NONE);
+    DO_TEST("smartcard-controller", NONE);
+
+    DO_TEST("pseries-cpu-compat-power9", NONE);
+    DO_TEST("pseries-cpu-compat", NONE);
+    DO_TEST("pseries-cpu-exact", NONE);
+
+    DO_TEST("user-aliases", NONE);
 
     if (getenv("LIBVIRT_SKIP_CLEANUP") == NULL)
         virFileDeleteTree(fakerootdir);

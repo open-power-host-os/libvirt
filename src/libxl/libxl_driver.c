@@ -2605,14 +2605,14 @@ libxlConnectDomainXMLFromNative(virConnectPtr conn,
         goto cleanup;
 
     if (STREQ(nativeFormat, XEN_CONFIG_FORMAT_XL)) {
-        if (!(conf = virConfReadMem(nativeConfig, strlen(nativeConfig), 0)))
+        if (!(conf = virConfReadString(nativeConfig, 0)))
             goto cleanup;
         if (!(def = xenParseXL(conf,
                                cfg->caps,
                                driver->xmlopt)))
             goto cleanup;
     } else if (STREQ(nativeFormat, XEN_CONFIG_FORMAT_XM)) {
-        if (!(conf = virConfReadMem(nativeConfig, strlen(nativeConfig), 0)))
+        if (!(conf = virConfReadString(nativeConfig, 0)))
             goto cleanup;
 
         if (!(def = xenParseXM(conf,
@@ -4956,12 +4956,12 @@ libxlDomainIsUpdated(virDomainPtr dom)
 
 static int
 libxlDomainInterfaceStats(virDomainPtr dom,
-                          const char *path,
+                          const char *device,
                           virDomainInterfaceStatsPtr stats)
 {
     libxlDriverPrivatePtr driver = dom->conn->privateData;
     virDomainObjPtr vm;
-    size_t i;
+    virDomainNetDefPtr net = NULL;
     int ret = -1;
 
     if (!(vm = libxlDomObjFromDomain(dom)))
@@ -4979,20 +4979,14 @@ libxlDomainInterfaceStats(virDomainPtr dom,
         goto endjob;
     }
 
-    /* Check the path is one of the domain's network interfaces. */
-    for (i = 0; i < vm->def->nnets; i++) {
-        if (vm->def->nets[i]->ifname &&
-            STREQ(vm->def->nets[i]->ifname, path)) {
-            ret = 0;
-            break;
-        }
-    }
+    if (!(net = virDomainNetFind(vm->def, device)))
+        goto endjob;
 
-    if (ret == 0)
-        ret = virNetDevTapInterfaceStats(path, stats);
-    else
-        virReportError(VIR_ERR_INVALID_ARG,
-                       _("'%s' is not a known interface"), path);
+    if (virNetDevTapInterfaceStats(net->ifname, stats,
+                                   !virDomainNetTypeSharesHostView(net)) < 0)
+        goto endjob;
+
+    ret = 0;
 
  endjob:
     libxlDomainObjEndJob(driver, vm);
@@ -5374,7 +5368,7 @@ libxlDomainBlockStatsVBD(virDomainObjPtr vm,
     int devno = libxlDiskPathToID(dev);
     int size;
     char *path, *name, *val;
-    unsigned long long stat;
+    unsigned long long status;
 
     path = name = val = NULL;
     if (devno < 0) {
@@ -5401,12 +5395,12 @@ libxlDomainBlockStatsVBD(virDomainObjPtr vm,
 # define LIBXL_SET_VBDSTAT(FIELD, VAR, MUL)           \
     if ((virAsprintf(&name, "%s/"FIELD, path) < 0) || \
         (virFileReadAll(name, 256, &val) < 0) ||      \
-        (sscanf(val, "%llu", &stat) != 1)) {          \
+        (sscanf(val, "%llu", &status) != 1)) {        \
         virReportError(VIR_ERR_OPERATION_FAILED,      \
                        _("cannot read %s"), name);    \
         goto cleanup;                                 \
     }                                                 \
-    VAR += (stat * MUL);                              \
+    VAR += (status * MUL);                            \
     VIR_FREE(name);                                   \
     VIR_FREE(val);
 
@@ -6450,7 +6444,9 @@ libxlConnectBaselineCPU(virConnectPtr conn,
                         unsigned int ncpus,
                         unsigned int flags)
 {
-    char *cpu = NULL;
+    virCPUDefPtr *cpus = NULL;
+    virCPUDefPtr cpu = NULL;
+    char *cpustr = NULL;
 
     virCheckFlags(VIR_CONNECT_BASELINE_CPU_EXPAND_FEATURES |
                   VIR_CONNECT_BASELINE_CPU_MIGRATABLE, NULL);
@@ -6458,10 +6454,24 @@ libxlConnectBaselineCPU(virConnectPtr conn,
     if (virConnectBaselineCPUEnsureACL(conn) < 0)
         goto cleanup;
 
-    cpu = cpuBaselineXML(xmlCPUs, ncpus, NULL, 0, flags);
+    if (!(cpus = virCPUDefListParse(xmlCPUs, ncpus, VIR_CPU_TYPE_HOST)))
+        goto cleanup;
+
+    if (!(cpu = cpuBaseline(cpus, ncpus, NULL,
+                            !!(flags & VIR_CONNECT_BASELINE_CPU_MIGRATABLE))))
+        goto cleanup;
+
+    if ((flags & VIR_CONNECT_BASELINE_CPU_EXPAND_FEATURES) &&
+        virCPUExpandFeatures(cpus[0]->arch, cpu) < 0)
+        goto cleanup;
+
+    cpustr = virCPUDefFormat(cpu, NULL);
 
  cleanup:
-    return cpu;
+    virCPUDefListFree(cpus);
+    virCPUDefFree(cpu);
+
+    return cpustr;
 }
 
 static virHypervisorDriver libxlHypervisorDriver = {

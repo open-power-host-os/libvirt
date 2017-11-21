@@ -134,7 +134,7 @@ vzBuildCapabilities(void)
         goto error;
 
     if (!(caps->host.cpu = virCPUGetHost(caps->host.arch, VIR_CPU_TYPE_HOST,
-                                         &nodeinfo, NULL, 0)))
+                                         &nodeinfo, NULL)))
         goto error;
 
     if (virCapabilitiesAddHostMigrateTransport(caps, "vzmigr") < 0)
@@ -945,12 +945,32 @@ vzConnectBaselineCPU(virConnectPtr conn,
                      unsigned int ncpus,
                      unsigned int flags)
 {
+    virCPUDefPtr *cpus = NULL;
+    virCPUDefPtr cpu = NULL;
+    char *cpustr = NULL;
+
     virCheckFlags(VIR_CONNECT_BASELINE_CPU_EXPAND_FEATURES, NULL);
 
     if (virConnectBaselineCPUEnsureACL(conn) < 0)
         return NULL;
 
-    return cpuBaselineXML(xmlCPUs, ncpus, NULL, 0, flags);
+    if (!(cpus = virCPUDefListParse(xmlCPUs, ncpus, VIR_CPU_TYPE_HOST)))
+        goto cleanup;
+
+    if (!(cpu = cpuBaseline(cpus, ncpus, NULL, false)))
+        goto cleanup;
+
+    if ((flags & VIR_CONNECT_BASELINE_CPU_EXPAND_FEATURES) &&
+        virCPUExpandFeatures(cpus[0]->arch, cpu) < 0)
+        goto cleanup;
+
+    cpustr = virCPUDefFormat(cpu, NULL);
+
+ cleanup:
+    virCPUDefListFree(cpus);
+    virCPUDefFree(cpu);
+
+    return cpustr;
 }
 
 
@@ -1853,7 +1873,7 @@ vzDomainBlockStatsFlags(virDomainPtr domain,
 
 static int
 vzDomainInterfaceStats(virDomainPtr domain,
-                         const char *path,
+                         const char *device,
                          virDomainInterfaceStatsPtr stats)
 {
     virDomainObjPtr dom = NULL;
@@ -1868,7 +1888,7 @@ vzDomainInterfaceStats(virDomainPtr domain,
 
     privdom = dom->privateData;
 
-    ret = prlsdkGetNetStats(privdom->stats, privdom->sdkdom, path, stats);
+    ret = prlsdkGetNetStats(privdom->stats, privdom->sdkdom, device, stats);
 
  cleanup:
     virDomainObjEndAPI(&dom);

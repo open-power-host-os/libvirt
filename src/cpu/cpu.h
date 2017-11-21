@@ -27,6 +27,7 @@
 # include "virerror.h"
 # include "datatypes.h"
 # include "virarch.h"
+# include "domain_capabilities.h"
 # include "cpu_conf.h"
 # include "cpu_x86_data.h"
 # include "cpu_ppc64_data.h"
@@ -52,9 +53,7 @@ typedef virCPUCompareResult
 typedef int
 (*cpuArchDecode)    (virCPUDefPtr cpu,
                      const virCPUData *data,
-                     const char **models,
-                     unsigned int nmodels,
-                     const char *preferred);
+                     virDomainCapsCPUModelsPtr models);
 
 typedef int
 (*cpuArchEncode)    (virArch arch,
@@ -71,14 +70,12 @@ typedef void
 
 typedef int
 (*virCPUArchGetHost)(virCPUDefPtr cpu,
-                     const char **models,
-                     unsigned int nmodels);
+                     virDomainCapsCPUModelsPtr models);
 
 typedef virCPUDefPtr
 (*cpuArchBaseline)  (virCPUDefPtr *cpus,
                      unsigned int ncpus,
-                     const char **models,
-                     unsigned int nmodels,
+                     virDomainCapsCPUModelsPtr models,
                      bool migratable);
 
 typedef int
@@ -109,8 +106,7 @@ typedef int
 
 typedef int
 (*virCPUArchTranslate)(virCPUDefPtr cpu,
-                       const char **models,
-                       unsigned int nmodels);
+                       virDomainCapsCPUModelsPtr models);
 
 typedef int
 (*virCPUArchConvertLegacy)(virCPUDefPtr cpu);
@@ -120,6 +116,9 @@ typedef int
 
 typedef virCPUDefPtr
 (*virCPUArchCopyMigratable)(virCPUDefPtr cpu);
+
+typedef int
+(*virCPUArchValidateFeatures)(virCPUDefPtr cpu);
 
 struct cpuArchDriver {
     const char *name;
@@ -142,6 +141,7 @@ struct cpuArchDriver {
     virCPUArchConvertLegacy convertLegacy;
     virCPUArchExpandFeatures expandFeatures;
     virCPUArchCopyMigratable copyMigratable;
+    virCPUArchValidateFeatures validateFeatures;
 };
 
 
@@ -161,9 +161,7 @@ virCPUCompare(virArch arch,
 int
 cpuDecode   (virCPUDefPtr cpu,
              const virCPUData *data,
-             const char **models,
-             unsigned int nmodels,
-             const char *preferred)
+             virDomainCapsCPUModelsPtr models)
     ATTRIBUTE_NONNULL(1) ATTRIBUTE_NONNULL(2);
 
 int
@@ -190,24 +188,15 @@ virCPUDefPtr
 virCPUGetHost(virArch arch,
               virCPUType type,
               virNodeInfoPtr nodeInfo,
-              const char **models,
-              unsigned int nmodels);
+              virDomainCapsCPUModelsPtr models);
 
 virCPUDefPtr
 virCPUProbeHost(virArch arch);
 
-char *
-cpuBaselineXML(const char **xmlCPUs,
-               unsigned int ncpus,
-               const char **models,
-               unsigned int nmodels,
-               unsigned int flags);
-
 virCPUDefPtr
 cpuBaseline (virCPUDefPtr *cpus,
              unsigned int ncpus,
-             const char **models,
-             unsigned int nmodels,
+             virDomainCapsCPUModelsPtr models,
              bool migratable);
 
 int
@@ -238,8 +227,7 @@ virCPUDataCheckFeature(const virCPUData *data,
 
 bool
 virCPUModelIsAllowed(const char *model,
-                     const char **models,
-                     unsigned int nmodels)
+                     virDomainCapsCPUModelsPtr models)
     ATTRIBUTE_NONNULL(1);
 
 int
@@ -248,8 +236,7 @@ virCPUGetModels(virArch arch, char ***models);
 int
 virCPUTranslate(virArch arch,
                 virCPUDefPtr cpu,
-                const char **models,
-                unsigned int nmodels)
+                virDomainCapsCPUModelsPtr models)
     ATTRIBUTE_NONNULL(2);
 
 int
@@ -264,6 +251,11 @@ virCPUExpandFeatures(virArch arch,
 virCPUDefPtr
 virCPUCopyMigratable(virArch arch,
                      virCPUDefPtr cpu);
+
+int
+virCPUValidateFeatures(virArch arch,
+                       virCPUDefPtr cpu)
+    ATTRIBUTE_NONNULL(2);
 
 /* virCPUDataFormat and virCPUDataParse are implemented for unit tests only and
  * have no real-life usage

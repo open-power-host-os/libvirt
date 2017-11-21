@@ -209,7 +209,7 @@
     <interleave>
       <optional>
         <element name='name'>
-          <ref name='genericName'/>
+          <ref name='poolName'/>
         </element>
       </optional>
       <optional>
@@ -223,7 +223,7 @@
   <define name='commonmetadata'>
     <interleave>
       <element name='name'>
-        <ref name='genericName'/>
+        <ref name='poolName'/>
       </element>
       <optional>
         <element name='uuid'>
@@ -521,7 +521,7 @@
             <ref name='sourceinfodir'/>
             <ref name='sourcefmtnetfs'/>
             <optional>
-                <ref name='sourceinfovendor'/>
+              <ref name='sourceinfovendor'/>
             </optional>
           </interleave>
         </group>
@@ -538,7 +538,7 @@
               </attribute>
             </element>
             <optional>
-                <ref name='sourceinfovendor'/>
+              <ref name='sourceinfovendor'/>
             </optional>
           </interleave>
         </group>

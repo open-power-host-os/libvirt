@@ -6,6 +6,14 @@
   <!-- This schema is not designed for standalone use; another file
        must include both this file and basictypes.rng -->
 
+  <define name="poolName">
+    <data type="string">
+      <!-- Use literal newline instead of \n for bug in libxml2 2.7.6 -->
+      <param name="pattern">[^/
+]+</param>
+    </data>
+  </define>
+
   <define name='encryption'>
     <element name='encryption'>
       <attribute name='format'>
@@ -34,9 +42,7 @@
   <define name='secret'>
     <element name='secret'>
       <attribute name='type'>
-        <choice>
-          <value>passphrase</value>
-        </choice>
+        <value>passphrase</value>
       </attribute>
       <choice>
         <attribute name='uuid'>

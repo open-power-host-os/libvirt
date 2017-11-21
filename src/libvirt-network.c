@@ -36,10 +36,6 @@ VIR_LOG_INIT("libvirt.network");
  * reference counter on the connection is not increased by this
  * call.
  *
- * WARNING: When writing libvirt bindings in other languages, do
- * not use this function.  Instead, store the connection and
- * the network object together.
- *
  * Returns the virConnectPtr or NULL in case of failure.
  */
 virConnectPtr
@@ -95,7 +91,7 @@ virConnectListAllNetworks(virConnectPtr conn,
                           virNetworkPtr **nets,
                           unsigned int flags)
 {
-    VIR_DEBUG("conn=%p, nets=%p, flags=%x", conn, nets, flags);
+    VIR_DEBUG("conn=%p, nets=%p, flags=0x%x", conn, nets, flags);
 
     virResetLastError();
 
@@ -794,7 +790,7 @@ char *
 virNetworkGetXMLDesc(virNetworkPtr network, unsigned int flags)
 {
     virConnectPtr conn;
-    VIR_DEBUG("network=%p, flags=%x", network, flags);
+    VIR_DEBUG("network=%p, flags=0x%x", network, flags);
 
     virResetLastError();
 
@@ -1203,7 +1199,7 @@ virNetworkGetDHCPLeases(virNetworkPtr network,
                         unsigned int flags)
 {
     virConnectPtr conn;
-    VIR_DEBUG("network=%p, mac='%s' leases=%p, flags=%x",
+    VIR_DEBUG("network=%p, mac='%s' leases=%p, flags=0x%x",
                network, NULLSTR(mac), leases, flags);
 
     virResetLastError();

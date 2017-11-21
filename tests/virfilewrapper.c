@@ -70,7 +70,7 @@ static void init_syms(void)
 
 int
 virFileWrapperAddPrefix(const char *prefix,
-                     const char *override)
+                        const char *override)
 {
     /* Both parameters are mandatory */
     if (!prefix || !override)
@@ -145,7 +145,7 @@ virFileWrapperOverridePrefix(const char *path)
     do {                                                \
         init_syms();                                    \
                                                         \
-        newpath = virFileWrapperOverridePrefix(path);      \
+        newpath = virFileWrapperOverridePrefix(path);   \
         if (!newpath)                                   \
             abort();                                    \
     } while (0)
@@ -257,10 +257,21 @@ int open(const char *path, int flags, ...)
 {
     int ret = -1;
     char *newpath = NULL;
+    va_list ap;
+    mode_t mode = 0;
 
     PATH_OVERRIDE(newpath, path);
 
-    ret = real_open(newpath, flags);
+    /* The mode argument is mandatory when O_CREAT is set in flags,
+     * otherwise the argument is ignored.
+     */
+    if (flags & O_CREAT) {
+        va_start(ap, flags);
+        mode = (mode_t) va_arg(ap, int);
+        va_end(ap);
+    }
+
+    ret = real_open(newpath, flags, mode);
 
     VIR_FREE(newpath);
 

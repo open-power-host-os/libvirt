@@ -174,7 +174,7 @@ typedef enum {
     QEMU_CAPS_TRANSACTION, /* transaction monitor command */
 
     /* 90 */
-    QEMU_CAPS_BLOCKJOB_SYNC, /* old block_job_cancel, block_stream */
+    X_QEMU_CAPS_BLOCKJOB_SYNC, /* old block_job_cancel, block_stream */
     QEMU_CAPS_BLOCKJOB_ASYNC, /* new block-job-cancel, block-stream */
     QEMU_CAPS_SCSI_CD, /* -device scsi-cd */
     QEMU_CAPS_IDE_CD, /* -device ide-cd */
@@ -422,6 +422,13 @@ typedef enum {
     /* 265 */
     QEMU_CAPS_SPAPR_PCI_HOST_BRIDGE_NUMA_NODE, /* spapr-pci-host-bridge.numa_node= */
     QEMU_CAPS_VNC_MULTI_SERVERS, /* -vnc vnc=unix:/path */
+    QEMU_CAPS_VIRTIO_NET_TX_QUEUE_SIZE, /* virtio-net-*.tx_queue_size */
+    QEMU_CAPS_CHARDEV_RECONNECT, /* -chardev reconnect */
+    QEMU_CAPS_VIRTIO_GPU_MAX_OUTPUTS, /* -device virtio-(vga|gpu-*),max-outputs= */
+
+    /* 270 */
+    QEMU_CAPS_VXHS, /* -drive file.driver=vxhs via query-qmp-schema */
+    QEMU_CAPS_VIRTIO_BLK_NUM_QUEUES, /* virtio-blk-*.num-queues */
 
     QEMU_CAPS_LAST /* this must always be the last item */
 } virQEMUCapsFlags;
@@ -463,10 +470,8 @@ int virQEMUCapsAddCPUDefinitions(virQEMUCapsPtr qemuCaps,
                                  const char **name,
                                  size_t count,
                                  virDomainCapsCPUUsable usable);
-int virQEMUCapsGetCPUDefinitions(virQEMUCapsPtr qemuCaps,
-                                 virDomainVirtType type,
-                                 char ***names,
-                                 size_t *count);
+virDomainCapsCPUModelsPtr virQEMUCapsGetCPUDefinitions(virQEMUCapsPtr qemuCaps,
+                                                       virDomainVirtType type);
 
 typedef enum {
     /* Host CPU definition reported in domain capabilities. */
@@ -543,5 +548,8 @@ int virQEMUCapsFillDomainCaps(virCapsPtr caps,
 
 bool virQEMUCapsGuestIsNative(virArch host,
                               virArch guest);
+
+bool virQEMUCapsCPUFilterFeatures(const char *name,
+                                  void *opaque);
 
 #endif /* __QEMU_CAPABILITIES_H__*/

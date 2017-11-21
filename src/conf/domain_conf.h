@@ -668,6 +668,7 @@ struct _virDomainDiskDef {
     unsigned int iothread; /* unused = 0, > 0 specific thread # */
     int detect_zeroes; /* enum virDomainDiskDetectZeroes */
     char *domain_name; /* backend domain name */
+    unsigned int queues;
     virDomainVirtioOptionsPtr virtio;
 };
 
@@ -969,6 +970,7 @@ struct _virDomainNetDef {
             virTristateSwitch event_idx;
             unsigned int queues; /* Multiqueue virtio-net */
             unsigned int rx_queue_size;
+            unsigned int tx_queue_size;
             struct {
                 virTristateSwitch csum;
                 virTristateSwitch gso;
@@ -1120,7 +1122,7 @@ typedef enum {
 } virDomainChrType;
 
 typedef enum {
-    VIR_DOMAIN_CHR_TCP_PROTOCOL_RAW,
+    VIR_DOMAIN_CHR_TCP_PROTOCOL_RAW = 0,
     VIR_DOMAIN_CHR_TCP_PROTOCOL_TELNET,
     VIR_DOMAIN_CHR_TCP_PROTOCOL_TELNETS, /* secure telnet */
     VIR_DOMAIN_CHR_TCP_PROTOCOL_TLS,
@@ -1135,6 +1137,15 @@ typedef enum {
 
     VIR_DOMAIN_CHR_SPICEVMC_LAST
 } virDomainChrSpicevmcName;
+
+
+struct _virDomainChrSourceReconnectDef {
+    virTristateBool enabled;
+    unsigned int timeout;
+};
+typedef struct _virDomainChrSourceReconnectDef virDomainChrSourceReconnectDef;
+typedef virDomainChrSourceReconnectDef *virDomainChrSourceReconnectDefPtr;
+
 
 /* The host side information for a character device.  */
 struct _virDomainChrSourceDef {
@@ -1158,6 +1169,7 @@ struct _virDomainChrSourceDef {
             bool tlscreds;
             int haveTLS; /* enum virTristateBool */
             bool tlsFromConfig;
+            virDomainChrSourceReconnectDef reconnect;
         } tcp;
         struct {
             char *bindHost;
@@ -1168,6 +1180,7 @@ struct _virDomainChrSourceDef {
         struct {
             char *path;
             bool listen;
+            virDomainChrSourceReconnectDef reconnect;
         } nix;
         int spicevmc;
         struct {
@@ -1347,6 +1360,7 @@ struct _virDomainWatchdogDef {
 
 
 typedef enum {
+    VIR_DOMAIN_VIDEO_TYPE_DEFAULT,
     VIR_DOMAIN_VIDEO_TYPE_VGA,
     VIR_DOMAIN_VIDEO_TYPE_CIRRUS,
     VIR_DOMAIN_VIDEO_TYPE_VMVGA,
@@ -1776,26 +1790,6 @@ typedef enum {
     VIR_DOMAIN_CAPS_FEATURE_WAKE_ALARM,
     VIR_DOMAIN_CAPS_FEATURE_LAST
 } virDomainCapsFeature;
-
-typedef enum {
-    VIR_DOMAIN_LIFECYCLE_DESTROY,
-    VIR_DOMAIN_LIFECYCLE_RESTART,
-    VIR_DOMAIN_LIFECYCLE_RESTART_RENAME,
-    VIR_DOMAIN_LIFECYCLE_PRESERVE,
-
-    VIR_DOMAIN_LIFECYCLE_LAST
-} virDomainLifecycleAction;
-
-typedef enum {
-    VIR_DOMAIN_LIFECYCLE_CRASH_DESTROY,
-    VIR_DOMAIN_LIFECYCLE_CRASH_RESTART,
-    VIR_DOMAIN_LIFECYCLE_CRASH_RESTART_RENAME,
-    VIR_DOMAIN_LIFECYCLE_CRASH_PRESERVE,
-    VIR_DOMAIN_LIFECYCLE_CRASH_COREDUMP_DESTROY,
-    VIR_DOMAIN_LIFECYCLE_CRASH_COREDUMP_RESTART,
-
-    VIR_DOMAIN_LIFECYCLE_CRASH_LAST
-} virDomainLifecycleCrashAction;
 
 typedef enum {
     VIR_DOMAIN_LOCK_FAILURE_DEFAULT,
@@ -2410,6 +2404,12 @@ struct _virDomainDef {
 
     /* Application-specific custom metadata */
     xmlNodePtr metadata;
+
+    /* internal fields */
+    bool postParseFailed; /* set to true if one of the custom post parse
+                             callbacks failed for a non-critical reason
+                             (was not able to fill in some data) and thus
+                             should be re-run before starting */
 };
 
 
@@ -2488,6 +2488,7 @@ typedef enum {
     VIR_DOMAIN_DEF_FEATURE_OFFLINE_VCPUPIN = (1 << 2),
     VIR_DOMAIN_DEF_FEATURE_NAME_SLASH = (1 << 3),
     VIR_DOMAIN_DEF_FEATURE_INDIVIDUAL_VCPUS = (1 << 4),
+    VIR_DOMAIN_DEF_FEATURE_USER_ALIAS = (1 << 5),
 } virDomainDefFeatures;
 
 
@@ -2510,11 +2511,23 @@ virDomainDeviceDefListAddCopy(virDomainDeviceDefListPtr list, virDomainDeviceDef
 void virDomainDeviceDefListFree(virDomainDeviceDefListPtr list);
 
 
+/* Called after everything else has been parsed, for adjusting basics.
+ * This has similar semantics to virDomainDefPostParseCallback, but no
+ * parseOpaque is used. This callback is run prior to
+ * virDomainDefPostParseCallback. */
+typedef int (*virDomainDefPostParseBasicCallback)(virDomainDefPtr def,
+                                                  virCapsPtr caps,
+                                                  void *opaque);
+
+
 /* Called once after everything else has been parsed, for adjusting
  * overall domain defaults.
  * @parseOpaque is opaque data passed by virDomainDefParse* caller,
  * @opaque is opaque data set by driver (usually pointer to driver
- * private data). */
+ * private data). Non-fatal failures should be reported by returning 1. In
+ * cases when that is allowed, such failure is translated to a success return
+ * value and the failure is noted in def->postParseFailed. Drivers should then
+ * re-run the post parse callback when attempting to use such definition. */
 typedef int (*virDomainDefPostParseCallback)(virDomainDefPtr def,
                                              virCapsPtr caps,
                                              unsigned int parseFlags,
@@ -2542,6 +2555,13 @@ typedef int (*virDomainDefAssignAddressesCallback)(virDomainDef *def,
                                                    void *opaque,
                                                    void *parseOpaque);
 
+typedef int (*virDomainDefPostParseDataAlloc)(const virDomainDef *def,
+                                              virCapsPtr caps,
+                                              unsigned int parseFlags,
+                                              void *opaque,
+                                              void **parseOpaque);
+typedef void (*virDomainDefPostParseDataFree)(void *parseOpaque);
+
 /* Called in appropriate places where the domain conf parser can return failure
  * for configurations that were previously accepted. This shall not modify the
  * config. */
@@ -2559,9 +2579,12 @@ typedef struct _virDomainDefParserConfig virDomainDefParserConfig;
 typedef virDomainDefParserConfig *virDomainDefParserConfigPtr;
 struct _virDomainDefParserConfig {
     /* driver domain definition callbacks */
+    virDomainDefPostParseBasicCallback domainPostParseBasicCallback;
+    virDomainDefPostParseDataAlloc domainPostParseDataAlloc;
     virDomainDefPostParseCallback domainPostParseCallback;
     virDomainDeviceDefPostParseCallback devicesPostParseCallback;
     virDomainDefAssignAddressesCallback assignAddressesCallback;
+    virDomainDefPostParseDataFree domainPostParseDataFree;
 
     /* validation callbacks */
     virDomainDefValidateCallback domainValidateCallback;
@@ -2629,6 +2652,10 @@ int virDomainDefPostParse(virDomainDefPtr def,
                           unsigned int parseFlags,
                           virDomainXMLOptionPtr xmlopt,
                           void *parseOpaque);
+
+int virDomainDeviceValidateAliasForHotplug(virDomainObjPtr vm,
+                                           virDomainDeviceDefPtr dev,
+                                           unsigned int flags);
 
 int virDomainDefValidate(virDomainDefPtr def,
                          virCapsPtr caps,
@@ -2712,6 +2739,7 @@ void virDomainSoundDefFree(virDomainSoundDefPtr def);
 void virDomainMemballoonDefFree(virDomainMemballoonDefPtr def);
 void virDomainNVRAMDefFree(virDomainNVRAMDefPtr def);
 void virDomainWatchdogDefFree(virDomainWatchdogDefPtr def);
+virDomainVideoDefPtr virDomainVideoDefNew(void);
 void virDomainVideoDefFree(virDomainVideoDefPtr def);
 virDomainHostdevDefPtr virDomainHostdevDefNew(virDomainXMLOptionPtr xmlopt);
 void virDomainHostdevDefClear(virDomainHostdevDefPtr def);
@@ -2819,22 +2847,26 @@ typedef enum {
      * that would break ABI otherwise.  This should be used only if it's safe
      * to do such change. */
     VIR_DOMAIN_DEF_PARSE_ABI_UPDATE_MIGRATION = 1 << 12,
+    /* Allows to ignore certain failures in the post parse callbacks, which
+     * may happen due to missing packages and can be fixed by re-running the
+     * post parse callbacks before starting. Failure of the post parse callback
+     * is recorded as def->postParseFail */
+    VIR_DOMAIN_DEF_PARSE_ALLOW_POST_PARSE_FAIL = 1 << 13,
 } virDomainDefParseFlags;
 
 typedef enum {
     VIR_DOMAIN_DEF_FORMAT_SECURE          = 1 << 0,
     VIR_DOMAIN_DEF_FORMAT_INACTIVE        = 1 << 1,
-    VIR_DOMAIN_DEF_FORMAT_UPDATE_CPU      = 1 << 2,
-    VIR_DOMAIN_DEF_FORMAT_MIGRATABLE      = 1 << 3,
+    VIR_DOMAIN_DEF_FORMAT_MIGRATABLE      = 1 << 2,
     /* format internal domain status information */
-    VIR_DOMAIN_DEF_FORMAT_STATUS          = 1 << 4,
+    VIR_DOMAIN_DEF_FORMAT_STATUS          = 1 << 3,
     /* format <actual> element */
-    VIR_DOMAIN_DEF_FORMAT_ACTUAL_NET      = 1 << 5,
+    VIR_DOMAIN_DEF_FORMAT_ACTUAL_NET      = 1 << 4,
     /* format original states of host PCI device */
-    VIR_DOMAIN_DEF_FORMAT_PCI_ORIG_STATES = 1 << 6,
-    VIR_DOMAIN_DEF_FORMAT_ALLOW_ROM       = 1 << 7,
-    VIR_DOMAIN_DEF_FORMAT_ALLOW_BOOT      = 1 << 8,
-    VIR_DOMAIN_DEF_FORMAT_CLOCK_ADJUST    = 1 << 9,
+    VIR_DOMAIN_DEF_FORMAT_PCI_ORIG_STATES = 1 << 5,
+    VIR_DOMAIN_DEF_FORMAT_ALLOW_ROM       = 1 << 6,
+    VIR_DOMAIN_DEF_FORMAT_ALLOW_BOOT      = 1 << 7,
+    VIR_DOMAIN_DEF_FORMAT_CLOCK_ADJUST    = 1 << 8,
 } virDomainDefFormatFlags;
 
 /* Use these flags to skip specific domain ABI consistency checks done
@@ -2934,8 +2966,7 @@ typedef enum {
 } virDomainDeviceAction;
 
 int virDomainDefCompatibleDevice(virDomainDefPtr def,
-                                 virDomainDeviceDefPtr dev,
-                                 virDomainDeviceAction action);
+                                 virDomainDeviceDefPtr dev);
 
 void virDomainRNGDefFree(virDomainRNGDefPtr def);
 
@@ -2969,10 +3000,12 @@ virDomainDiskDefPtr
 virDomainDiskRemoveByName(virDomainDefPtr def, const char *name);
 int virDomainDiskSourceParse(xmlNodePtr node,
                              xmlXPathContextPtr ctxt,
-                             virStorageSourcePtr src);
+                             virStorageSourcePtr src,
+                             unsigned int flags);
 
 int virDomainNetFindIdx(virDomainDefPtr def, virDomainNetDefPtr net);
 virDomainNetDefPtr virDomainNetFind(virDomainDefPtr def, const char *device);
+virDomainNetDefPtr virDomainNetFindByName(virDomainDefPtr def, const char *ifname);
 bool virDomainHasNet(virDomainDefPtr def, virDomainNetDefPtr net);
 int virDomainNetInsert(virDomainDefPtr def, virDomainNetDefPtr net);
 virDomainNetDefPtr virDomainNetRemove(virDomainDefPtr def, size_t i);
@@ -2993,7 +3026,7 @@ int virDomainGraphicsListenAppendSocket(virDomainGraphicsDefPtr def,
                                         const char *socket)
             ATTRIBUTE_NONNULL(1);
 
-virDomainNetType virDomainNetGetActualType(virDomainNetDefPtr iface);
+virDomainNetType virDomainNetGetActualType(const virDomainNetDef *iface);
 const char *virDomainNetGetActualBridgeName(virDomainNetDefPtr iface);
 int virDomainNetGetActualBridgeMACTableManager(virDomainNetDefPtr iface);
 const char *virDomainNetGetActualDirectDev(virDomainNetDefPtr iface);
@@ -3175,6 +3208,9 @@ ssize_t virDomainShmemDefFind(virDomainDefPtr def, virDomainShmemDefPtr shmem)
     ATTRIBUTE_NONNULL(1) ATTRIBUTE_NONNULL(2) ATTRIBUTE_RETURN_CHECK;
 virDomainShmemDefPtr virDomainShmemDefRemove(virDomainDefPtr def, size_t idx)
     ATTRIBUTE_NONNULL(1);
+ssize_t virDomainInputDefFind(const virDomainDef *def,
+                              const virDomainInputDef *input)
+    ATTRIBUTE_NONNULL(1) ATTRIBUTE_NONNULL(2) ATTRIBUTE_RETURN_CHECK;
 
 VIR_ENUM_DECL(virDomainTaint)
 VIR_ENUM_DECL(virDomainVirt)
@@ -3183,7 +3219,7 @@ VIR_ENUM_DECL(virDomainFeature)
 VIR_ENUM_DECL(virDomainCapabilitiesPolicy)
 VIR_ENUM_DECL(virDomainCapsFeature)
 VIR_ENUM_DECL(virDomainLifecycle)
-VIR_ENUM_DECL(virDomainLifecycleCrash)
+VIR_ENUM_DECL(virDomainLifecycleAction)
 VIR_ENUM_DECL(virDomainDevice)
 VIR_ENUM_DECL(virDomainDeviceAddress)
 VIR_ENUM_DECL(virDomainDiskDevice)
@@ -3365,4 +3401,43 @@ virDomainGenerateMachineName(const char *drivername,
                              int id,
                              const char *name,
                              bool privileged);
+/**
+ * virDomainNetTypeSharesHostView:
+ * @net: interface
+ *
+ * Some types of interfaces "share" the host view. For instance,
+ * for macvtap interface, every domain RX is the host RX too. And
+ * every domain TX is host TX too. IOW, for some types of
+ * interfaces guest and host are on the same side of RX/TX
+ * barrier. This is important so that we set up QoS correctly and
+ * report proper stats.
+ */
+static inline bool
+virDomainNetTypeSharesHostView(const virDomainNetDef *net)
+{
+    virDomainNetType actualType = virDomainNetGetActualType(net);
+    switch (actualType) {
+    case VIR_DOMAIN_NET_TYPE_DIRECT:
+    case VIR_DOMAIN_NET_TYPE_ETHERNET:
+        return true;
+    case VIR_DOMAIN_NET_TYPE_USER:
+    case VIR_DOMAIN_NET_TYPE_VHOSTUSER:
+    case VIR_DOMAIN_NET_TYPE_SERVER:
+    case VIR_DOMAIN_NET_TYPE_CLIENT:
+    case VIR_DOMAIN_NET_TYPE_MCAST:
+    case VIR_DOMAIN_NET_TYPE_NETWORK:
+    case VIR_DOMAIN_NET_TYPE_BRIDGE:
+    case VIR_DOMAIN_NET_TYPE_INTERNAL:
+    case VIR_DOMAIN_NET_TYPE_HOSTDEV:
+    case VIR_DOMAIN_NET_TYPE_UDP:
+    case VIR_DOMAIN_NET_TYPE_LAST:
+        break;
+    }
+    return false;
+}
+
+bool
+virDomainDefLifecycleActionAllowed(virDomainLifecycle type,
+                                   virDomainLifecycleAction action);
+
 #endif /* __DOMAIN_CONF_H */

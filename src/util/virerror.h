@@ -27,11 +27,6 @@
 extern virErrorFunc virErrorHandler;
 extern void *virUserData;
 
-/************************************************************************
- *									*
- *		API for error handling					*
- *									*
- ************************************************************************/
 int virErrorInitialize(void);
 void virRaiseErrorFull(const char *filename,
                        const char *funcname,
@@ -195,5 +190,8 @@ void virSetErrorLogPriorityFunc(virErrorLogPriorityFunc func);
 void virErrorSetErrnoFromLastError(void);
 
 bool virLastErrorIsSystemErrno(int errnum);
+
+void virErrorPreserveLast(virErrorPtr *saveerr);
+void virErrorRestore(virErrorPtr *savederr);
 
 #endif

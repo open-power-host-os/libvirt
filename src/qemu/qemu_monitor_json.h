@@ -141,12 +141,11 @@ int qemuMonitorJSONSetMigrationParams(qemuMonitorPtr mon,
                                       qemuMonitorMigrationParamsPtr params);
 
 int qemuMonitorJSONGetMigrationStats(qemuMonitorPtr mon,
-                                     qemuMonitorMigrationStatsPtr stats);
+                                     qemuMonitorMigrationStatsPtr stats,
+                                     char **error);
 
 int qemuMonitorJSONGetMigrationCapabilities(qemuMonitorPtr mon,
                                             char ***capabilities);
-int qemuMonitorJSONGetMigrationCapability(qemuMonitorPtr mon,
-                                          qemuMonitorMigrationCaps capability);
 int qemuMonitorJSONSetMigrationCapability(qemuMonitorPtr mon,
                                           qemuMonitorMigrationCaps capability,
                                           bool state);
@@ -300,19 +299,16 @@ int qemuMonitorJSONBlockStream(qemuMonitorPtr mon,
                                const char *device,
                                const char *base,
                                const char *backingName,
-                               unsigned long long speed,
-                               bool modern)
+                               unsigned long long speed)
     ATTRIBUTE_NONNULL(1) ATTRIBUTE_NONNULL(2);
 
 int qemuMonitorJSONBlockJobCancel(qemuMonitorPtr mon,
-                                  const char *device,
-                                  bool modern)
+                                  const char *device)
     ATTRIBUTE_NONNULL(1) ATTRIBUTE_NONNULL(2);
 
 int qemuMonitorJSONBlockJobSetSpeed(qemuMonitorPtr mon,
                                     const char *device,
-                                    unsigned long long speed,
-                                    bool modern)
+                                    unsigned long long speed)
     ATTRIBUTE_NONNULL(1) ATTRIBUTE_NONNULL(2);
 
 virHashTablePtr qemuMonitorJSONGetAllBlockJobInfo(qemuMonitorPtr mon)
@@ -504,6 +500,10 @@ int qemuMonitorJSONMigrateIncoming(qemuMonitorPtr mon,
 int qemuMonitorJSONMigrateStartPostCopy(qemuMonitorPtr mon)
     ATTRIBUTE_NONNULL(1);
 
+int qemuMonitorJSONMigrateContinue(qemuMonitorPtr mon,
+                                   qemuMonitorMigrationStatus status)
+    ATTRIBUTE_NONNULL(1);
+
 int qemuMonitorJSONGetRTCTime(qemuMonitorPtr mon,
                               struct tm *tm)
     ATTRIBUTE_NONNULL(1) ATTRIBUTE_NONNULL(2);
@@ -524,4 +524,7 @@ int qemuMonitorJSONSetBlockThreshold(qemuMonitorPtr mon,
 virJSONValuePtr qemuMonitorJSONQueryNamedBlockNodes(qemuMonitorPtr mon)
     ATTRIBUTE_NONNULL(1);
 
+int qemuMonitorJSONSetWatchdogAction(qemuMonitorPtr mon,
+                                     const char *action)
+    ATTRIBUTE_NONNULL(1);
 #endif /* QEMU_MONITOR_JSON_H */

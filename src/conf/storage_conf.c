@@ -823,7 +823,7 @@ virStoragePoolDefParseNode(xmlDocPtr xml,
     xmlXPathContextPtr ctxt = NULL;
     virStoragePoolDefPtr def = NULL;
 
-    if (!xmlStrEqual(root->name, BAD_CAST "pool")) {
+    if (!virXMLNodeNameEqual(root, "pool")) {
         virReportError(VIR_ERR_XML_ERROR,
                        _("unexpected root element <%s>, "
                          "expecting <pool>"),
@@ -1109,6 +1109,8 @@ virStorageVolDefParseXML(virStoragePoolDefPtr pool,
     if (VIR_ALLOC(ret) < 0)
         return NULL;
 
+    ret->target.type = VIR_STORAGE_TYPE_FILE;
+
     ret->name = virXPathString("string(./name)", ctxt);
     if (ret->name == NULL) {
         virReportError(VIR_ERR_XML_ERROR, "%s",
@@ -1132,6 +1134,8 @@ virStorageVolDefParseXML(virStoragePoolDefPtr pool,
     if ((backingStore = virXPathString("string(./backingStore/path)", ctxt))) {
         if (VIR_ALLOC(ret->target.backingStore) < 0)
             goto error;
+
+        ret->target.backingStore->type = VIR_STORAGE_TYPE_FILE;
 
         ret->target.backingStore->path = backingStore;
         backingStore = NULL;
@@ -1165,7 +1169,8 @@ virStorageVolDefParseXML(virStoragePoolDefPtr pool,
         if (virStorageSize(unit, capacity, &ret->target.capacity) < 0)
             goto error;
     } else if (!(flags & VIR_VOL_XML_PARSE_NO_CAPACITY) &&
-               !((flags & VIR_VOL_XML_PARSE_OPT_CAPACITY) && ret->target.backingStore)) {
+               !((flags & VIR_VOL_XML_PARSE_OPT_CAPACITY) &&
+                 virStorageSourceHasBacking(&ret->target))) {
         virReportError(VIR_ERR_XML_ERROR, "%s", _("missing capacity element"));
         goto error;
     }
@@ -1267,7 +1272,7 @@ virStorageVolDefParseNode(virStoragePoolDefPtr pool,
     xmlXPathContextPtr ctxt = NULL;
     virStorageVolDefPtr def = NULL;
 
-    if (!xmlStrEqual(root->name, BAD_CAST "volume")) {
+    if (!virXMLNodeNameEqual(root, "volume")) {
         virReportError(VIR_ERR_XML_ERROR,
                        _("unexpected root element <%s>, "
                          "expecting <volume>"),
@@ -1493,7 +1498,7 @@ virStorageVolDefFormat(virStoragePoolDefPtr pool,
                                      &def->target, "target") < 0)
         goto cleanup;
 
-    if (def->target.backingStore &&
+    if (virStorageSourceHasBacking(&def->target) &&
         virStorageVolTargetDefFormat(options, &buf,
                                      def->target.backingStore,
                                      "backingStore") < 0)

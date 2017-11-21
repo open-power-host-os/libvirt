@@ -38,8 +38,9 @@ typedef virNodeDeviceDriverState *virNodeDeviceDriverStatePtr;
 struct _virNodeDeviceDriverState {
     virMutex lock;
 
-    virNodeDeviceObjListPtr devs;	/* currently-known devices */
-    void *privateData;			/* driver-specific private data */
+    virNodeDeviceObjListPtr devs;       /* currently-known devices */
+    void *privateData;                  /* driver-specific private data */
+    bool privileged;                    /* whether we run in privileged mode */
 
     /* Immutable pointer, self-locking APIs */
     virObjectEventStatePtr nodeDeviceEventState;
@@ -91,12 +92,12 @@ int
 virNodeDeviceObjListNumOfDevices(virNodeDeviceObjListPtr devs,
                                  virConnectPtr conn,
                                  const char *cap,
-                                 virNodeDeviceObjListFilter aclfilter);
+                                 virNodeDeviceObjListFilter filter);
 
 int
 virNodeDeviceObjListGetNames(virNodeDeviceObjListPtr devs,
                              virConnectPtr conn,
-                             virNodeDeviceObjListFilter aclfilter,
+                             virNodeDeviceObjListFilter filter,
                              const char *cap,
                              char **const names,
                              int maxnames);
@@ -105,7 +106,7 @@ int
 virNodeDeviceObjListExport(virConnectPtr conn,
                            virNodeDeviceObjListPtr devobjs,
                            virNodeDevicePtr **devices,
-                           virNodeDeviceObjListFilter aclfilter,
+                           virNodeDeviceObjListFilter filter,
                            unsigned int flags);
 
 #endif /* __VIRNODEDEVICEOBJ_H__ */
