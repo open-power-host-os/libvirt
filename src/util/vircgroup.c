@@ -3521,8 +3521,7 @@ virCgroupRemoveEmptyParent(char *grppath)
     if (STRNEQ(partition, "/machine") && STRNEQ(partition, "/machine.slice"))
         goto cleanup;
 
-    grpdir = opendir(parent);
-    if (grpdir == NULL)
+    if (virDirOpen(&grpdir, parent) < 0)
         goto cleanup;
 
     while ((direrr = virDirRead(grpdir, &ent, NULL)) > 0) {
@@ -3532,7 +3531,7 @@ virCgroupRemoveEmptyParent(char *grppath)
             break;
         }
     }
-    closedir(grpdir);
+    VIR_DIR_CLOSE(grpdir);
 
     if (is_empty) {
         VIR_DEBUG("Removing empty parent cgroup %s", parent);
