@@ -67,10 +67,10 @@ static int
 virCPUppc64ConvertLegacy(virCPUDefPtr cpu)
 {
     if (cpu->model &&
-        (STREQ(cpu->model, "POWER7_v2.1") ||
-         STREQ(cpu->model, "POWER7_v2.3") ||
-         STREQ(cpu->model, "POWER7+_v2.1") ||
-         STREQ(cpu->model, "POWER8_v1.0"))) {
+        (STRCASEEQ(cpu->model, "POWER7_v2.1") ||
+         STRCASEEQ(cpu->model, "POWER7_v2.3") ||
+         STRCASEEQ(cpu->model, "POWER7+_v2.1") ||
+         STRCASEEQ(cpu->model, "POWER8_v1.0"))) {
         cpu->model[strlen("POWERx")] = 0;
     }
 
@@ -93,7 +93,7 @@ ppc64CheckCompatibilityMode(const char *host_model,
         return VIR_CPU_COMPARE_IDENTICAL;
 
     /* Valid host CPUs: POWER6, POWER7, POWER8, POWER9 */
-    if (!STRPREFIX(host_model, "POWER") ||
+    if (!STRCASEPREFIX(host_model, "POWER") ||
         !(tmp = (char *) host_model + strlen("POWER")) ||
         virStrToLong_i(tmp, NULL, 10, &host) < 0 ||
         host < 6 || host > 9) {
@@ -104,7 +104,7 @@ ppc64CheckCompatibilityMode(const char *host_model,
     }
 
     /* Valid compatibility modes: power6, power7, power8, power9 */
-    if (!STRPREFIX(compat_mode, "power") ||
+    if (!STRCASEPREFIX(compat_mode, "power") ||
         !(tmp = (char *) compat_mode + strlen("power")) ||
         virStrToLong_i(tmp, NULL, 10, &compat) < 0 ||
         compat < 6 || compat > 9) {
@@ -168,7 +168,7 @@ ppc64VendorFind(const struct ppc64_map *map,
     size_t i;
 
     for (i = 0; i < map->nvendors; i++) {
-        if (STREQ(map->vendors[i]->name, name))
+        if (STRCASEEQ(map->vendors[i]->name, name))
             return map->vendors[i];
     }
 
@@ -216,7 +216,7 @@ ppc64ModelFind(const struct ppc64_map *map,
     size_t i;
 
     for (i = 0; i < map->nmodels; i++) {
-        if (STREQ(map->models[i]->name, name))
+        if (STRCASEEQ(map->models[i]->name, name))
             return map->models[i];
     }
 
