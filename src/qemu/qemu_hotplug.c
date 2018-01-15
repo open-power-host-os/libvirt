@@ -985,7 +985,7 @@ qemuDomainAttachNetDevice(virQEMUDriverPtr driver,
             goto cleanup;
         break;
 
-    case VIR_DOMAIN_NET_TYPE_HOSTDEV: {
+    case VIR_DOMAIN_NET_TYPE_HOSTDEV:
         /* This is really a "smart hostdev", so it should be attached
          * as a hostdev (the hostdev code will reach over into the
          * netdev-specific code as appropriate), then also added to
@@ -994,18 +994,11 @@ qemuDomainAttachNetDevice(virQEMUDriverPtr driver,
          * qemuDomainAttachHostDevice uses a connection to resolve
          * a SCSI hostdev secret, which is not this case, so pass NULL.
          */
-        virDomainHostdevDefPtr hostdev = virDomainNetGetActualHostdev(net);
-        if (qemuDomainAttachPCIHostDevicePrepare(driver, vm->def,
-                                                 hostdev, priv->qemuCaps) < 0)
-            goto cleanup;
-
-        ret = qemuDomainAttachHostDevice(NULL, driver, vm, hostdev);
-        if (!ret)
-            qemuHostdevReAttachPCIDevices(driver, vm->def->name, &hostdev, 1);
-
+        ret = qemuDomainAttachHostDevice(NULL, driver, vm,
+                                         virDomainNetGetActualHostdev(net));
         goto cleanup;
         break;
-    }
+
     case VIR_DOMAIN_NET_TYPE_VHOSTUSER:
         queueSize = net->driver.virtio.queues;
         if (!queueSize)
@@ -1312,6 +1305,10 @@ qemuDomainAttachHostPCIDevice(virQEMUDriverPtr driver,
     int backend;
 
     if (VIR_REALLOC_N(vm->def->hostdevs, vm->def->nhostdevs + 1) < 0)
+        goto cleanup;
+
+    if (qemuDomainAttachPCIHostDevicePrepare(driver, vm->def,
+                                             hostdev, priv->qemuCaps) < 0)
         return -1;
 
     backend = hostdev->source.subsys.u.pci.backend;
@@ -1403,10 +1400,13 @@ qemuDomainAttachHostPCIDevice(virQEMUDriverPtr driver,
     if (releaseaddr)
         qemuDomainReleaseDeviceAddress(vm, info, NULL);
 
+    qemuHostdevReAttachPCIDevices(driver, vm->def->name, &hostdev, 1);
+
     VIR_FREE(devstr);
     VIR_FREE(configfd_name);
     VIR_FORCE_CLOSE(configfd);
 
+ cleanup:
     return -1;
 }
 
