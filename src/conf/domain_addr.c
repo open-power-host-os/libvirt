@@ -681,25 +681,11 @@ void
 virDomainPCIAddressReleaseAddr(virDomainPCIAddressSetPtr addrs,
                                virPCIDeviceAddressPtr addr)
 {
-    /* permit any kind of connection type in validation, since we
-     * already had it, and are giving it back.
-     */
-    virDomainPCIConnectFlags flags = VIR_PCI_CONNECT_TYPES_MASK;
-    char *addrStr = NULL;
-
-    if (!(addrStr = virDomainPCIAddressAsString(addr)))
-        goto cleanup;
-
-    if (!virDomainPCIAddressValidate(addrs, addr, addrStr, flags, false))
-        goto cleanup;
-
     if ((addr->multi == VIR_TRISTATE_SWITCH_ABSENT) && (addr->function == 0))
         addrs->buses[addr->bus].slot[addr->slot].functions = 0;
     else
         addrs->buses[addr->bus].slot[addr->slot].functions &= ~(1 << addr->function);
 
- cleanup:
-    VIR_FREE(addrStr);
 }
 
 virDomainPCIAddressSetPtr
