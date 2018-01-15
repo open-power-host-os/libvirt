@@ -173,10 +173,6 @@ void virDomainPCIAddressReleaseAddr(virDomainPCIAddressSetPtr addrs,
 void virDomainPCIAddressSetAllMulti(virDomainDefPtr def)
     ATTRIBUTE_NONNULL(1);
 
-int
-virDomainPCIMultifunctionDeviceAddressValidateAssign(virDomainPCIAddressSetPtr addrs,
-                                             virDomainDeviceDefListPtr devlist);
-
 struct _virDomainCCWAddressSet {
     virHashTablePtr defined;
     virDomainDeviceCCWAddress next;
