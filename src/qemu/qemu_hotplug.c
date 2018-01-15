@@ -677,59 +677,6 @@ qemuDomainAttachUSBMassStorageDevice(virConnectPtr conn,
     return 0;
 }
 
-int qemuDomainAttachPCIHostDevicePrepare(virQEMUDriverPtr driver,
-                                         virDomainDefPtr def,
-                                         virDomainHostdevDefPtr hostdev,
-                                         virQEMUCapsPtr qemuCaps)
-{
-    virQEMUDriverConfigPtr cfg = virQEMUDriverGetConfig(driver);
-    unsigned int flags = 0;
-    int ret = -1;
-    int backend;
-
-    if (!cfg->relaxedACS)
-        flags |= VIR_HOSTDEV_STRICT_ACS_CHECK;
-    if (qemuHostdevPreparePCIDevices(driver, def->name, def->uuid,
-                                     &hostdev, 1, qemuCaps, flags) < 0)
-        goto exit;
-
-    /* this could have been changed by qemuHostdevPreparePCIDevices */
-    backend = hostdev->source.subsys.u.pci.backend;
-
-    switch ((virDomainHostdevSubsysPCIBackendType) backend) {
-    case VIR_DOMAIN_HOSTDEV_PCI_BACKEND_VFIO:
-        if (!virQEMUCapsGet(qemuCaps, QEMU_CAPS_DEVICE_VFIO_PCI)) {
-            virReportError(VIR_ERR_CONFIG_UNSUPPORTED, "%s",
-                           _("VFIO PCI device assignment is not "
-                             "supported by this version of qemu"));
-            goto error;
-        }
-        break;
-
-    case VIR_DOMAIN_HOSTDEV_PCI_BACKEND_DEFAULT:
-    case VIR_DOMAIN_HOSTDEV_PCI_BACKEND_KVM:
-        break;
-
-    case VIR_DOMAIN_HOSTDEV_PCI_BACKEND_XEN:
-    case VIR_DOMAIN_HOSTDEV_PCI_BACKEND_TYPE_LAST:
-        virReportError(VIR_ERR_CONFIG_UNSUPPORTED,
-                       _("QEMU does not support device assignment mode '%s'"),
-                       virDomainHostdevSubsysPCIBackendTypeToString(backend));
-        goto error;
-        break;
-    }
-
-    ret = 0;
- exit:
-    virObjectUnref(cfg);
-    return ret;
- error:
-    qemuHostdevReAttachPCIDevices(driver, def->name, &hostdev, 1);
-    goto exit;
-}
-
-
-
 
 int
 qemuDomainAttachDeviceDiskLive(virConnectPtr conn,
@@ -1303,15 +1250,43 @@ qemuDomainAttachHostPCIDevice(virQEMUDriverPtr driver,
     bool teardownlabel = false;
     bool teardowndevice = false;
     int backend;
+    virQEMUDriverConfigPtr cfg = virQEMUDriverGetConfig(driver);
+    unsigned int flags = 0;
 
     if (VIR_REALLOC_N(vm->def->hostdevs, vm->def->nhostdevs + 1) < 0)
         goto cleanup;
 
-    if (qemuDomainAttachPCIHostDevicePrepare(driver, vm->def,
-                                             hostdev, priv->qemuCaps) < 0)
-        return -1;
+    if (!cfg->relaxedACS)
+        flags |= VIR_HOSTDEV_STRICT_ACS_CHECK;
+    if (qemuHostdevPreparePCIDevices(driver, vm->def->name, vm->def->uuid,
+                                     &hostdev, 1, priv->qemuCaps, flags) < 0)
+        goto cleanup;
 
+    /* this could have been changed by qemuHostdevPreparePCIDevices */
     backend = hostdev->source.subsys.u.pci.backend;
+
+    switch ((virDomainHostdevSubsysPCIBackendType) backend) {
+    case VIR_DOMAIN_HOSTDEV_PCI_BACKEND_VFIO:
+        if (!virQEMUCapsGet(priv->qemuCaps, QEMU_CAPS_DEVICE_VFIO_PCI)) {
+            virReportError(VIR_ERR_CONFIG_UNSUPPORTED, "%s",
+                           _("VFIO PCI device assignment is not "
+                             "supported by this version of qemu"));
+            goto error;
+        }
+        break;
+
+    case VIR_DOMAIN_HOSTDEV_PCI_BACKEND_DEFAULT:
+    case VIR_DOMAIN_HOSTDEV_PCI_BACKEND_KVM:
+        break;
+
+    case VIR_DOMAIN_HOSTDEV_PCI_BACKEND_XEN:
+    case VIR_DOMAIN_HOSTDEV_PCI_BACKEND_TYPE_LAST:
+        virReportError(VIR_ERR_CONFIG_UNSUPPORTED,
+                       _("QEMU does not support device assignment mode '%s'"),
+                       virDomainHostdevSubsysPCIBackendTypeToString(backend));
+        goto error;
+        break;
+    }
 
     /* Temporarily add the hostdev to the domain definition. This is needed
      * because qemuDomainAdjustMaxMemLock() requires the hostdev to be already
@@ -1384,6 +1359,7 @@ qemuDomainAttachHostPCIDevice(virQEMUDriverPtr driver,
     VIR_FREE(devstr);
     VIR_FREE(configfd_name);
     VIR_FORCE_CLOSE(configfd);
+    virObjectUnref(cfg);
 
     return 0;
 
@@ -1407,6 +1383,7 @@ qemuDomainAttachHostPCIDevice(virQEMUDriverPtr driver,
     VIR_FORCE_CLOSE(configfd);
 
  cleanup:
+    virObjectUnref(cfg);
     return -1;
 }
 
