@@ -642,15 +642,6 @@ virDomainPCIAddressReserveAddr(virDomainPCIAddressSetPtr addrs,
                                                   isolationGroup, true);
 }
 
-
-static int ATTRIBUTE_NONNULL(1) ATTRIBUTE_NONNULL(2)
-virDomainPCIAddressGetNextAddr(virDomainPCIAddressSetPtr addrs,
-                               virPCIDeviceAddressPtr next_addr,
-                               virDomainPCIConnectFlags flags,
-                               unsigned int isolationGroup,
-                               int function);
-
-
 int
 virDomainPCIAddressEnsureAddr(virDomainPCIAddressSetPtr addrs,
                               virDomainDeviceInfoPtr dev,
@@ -1035,21 +1026,12 @@ virDomainPCIMultifunctionDeviceAddressValidateAssign(virDomainPCIAddressSetPtr a
     virDomainPCIAddressSlot slot;
     virDomainDeviceInfoPtr info = NULL, privinfo = NULL;
     virDomainPCIConnectFlags flags = VIR_PCI_CONNECT_TYPES_MASK;
-    int isolationGroup = 0;
 
     if (!addrs)
         return 0;
 
-    for (i = 0; i < devlist->count; i++) {
-        virDomainDeviceDefPtr dev = devlist->devs[i];
-        if (dev->type == VIR_DOMAIN_DEVICE_HOSTDEV) {
-            isolationGroup = dev->data.hostdev->info->isolationGroup;
-            break;
-        }
-    }
-
-    if (virDomainPCIAddressGetNextAddr(addrs, &addr, flags, isolationGroup, 0) < 0)
-         return -1;
+    if (virDomainPCIAddressGetNextAddr(addrs, &addr, -1, flags) < 0)
+        return -1;
 
     bus = &addrs->buses[addr.bus];
     slot = bus->slot[addr.slot];
@@ -1122,9 +1104,7 @@ virDomainPCIMultifunctionDeviceAddressValidateAssign(virDomainPCIAddressSetPtr a
         }
 
         if (info->type == VIR_DOMAIN_DEVICE_ADDRESS_TYPE_NONE) {
-            info->addr.pci.domain = addr.domain;
-            info->addr.pci.bus = addr.bus;
-            info->addr.pci.slot = addr.slot;
+            info->addr.pci = addr;
             info->addr.pci.function = devlist->count - i - 1;
             info->type = VIR_DOMAIN_DEVICE_ADDRESS_TYPE_PCI;
             if (info->addr.pci.function == 0)
