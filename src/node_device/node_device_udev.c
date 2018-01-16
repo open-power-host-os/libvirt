@@ -401,16 +401,16 @@ udevFillMdevType(struct udev_device *device,
     int ret = -1;
     char *attrpath = NULL;
 
-#define MDEV_GET_SYSFS_ATTR(attr_name, cb, ...)                             \
-    do {                                                                    \
-        if (virAsprintf(&attrpath, "%s/%s", dir, #attr_name) < 0)           \
-            goto cleanup;                                                   \
-                                                                            \
-        if (cb(device, attrpath, __VA_ARGS__) < 0)                          \
-            goto cleanup;                                                   \
-                                                                            \
-        VIR_FREE(attrpath);                                                 \
-    } while (0)                                                             \
+#define MDEV_GET_SYSFS_ATTR(attr_name, cb, ...) \
+    do { \
+        if (virAsprintf(&attrpath, "%s/%s", dir, #attr_name) < 0) \
+            goto cleanup; \
+ \
+        if (cb(device, attrpath, __VA_ARGS__) < 0) \
+            goto cleanup; \
+ \
+        VIR_FREE(attrpath); \
+    } while (0) \
 
     if (VIR_STRDUP(type->id, last_component(dir)) < 0)
         goto cleanup;
@@ -1891,6 +1891,25 @@ udevSetupSystemDev(void)
 }
 
 
+static void
+nodeStateInitializeEnumerate(void *opaque)
+{
+    struct udev *udev = opaque;
+    udevEventDataPtr priv = driver->privateData;
+
+    /* Populate with known devices */
+    if (udevEnumerateDevices(udev) != 0)
+        goto error;
+
+    return;
+
+ error:
+    virObjectLock(priv);
+    priv->threadQuit = true;
+    virObjectUnlock(priv);
+}
+
+
 static int
 udevPCITranslateInit(bool privileged ATTRIBUTE_UNUSED)
 {
@@ -1922,6 +1941,7 @@ nodeStateInitialize(bool privileged,
 {
     udevEventDataPtr priv = NULL;
     struct udev *udev = NULL;
+    virThread enumThread;
 
     if (VIR_ALLOC(driver) < 0)
         return -1;
@@ -1932,6 +1952,8 @@ nodeStateInitialize(bool privileged,
         VIR_FREE(driver);
         return -1;
     }
+
+    driver->privileged = privileged;
 
     if (!(driver->devs = virNodeDeviceObjListNew()) ||
         !(priv = udevEventDataNew()))
@@ -2000,9 +2022,12 @@ nodeStateInitialize(bool privileged,
     if (udevSetupSystemDev() != 0)
         goto cleanup;
 
-    /* Populate with known devices */
-    if (udevEnumerateDevices(udev) != 0)
+    if (virThreadCreate(&enumThread, false, nodeStateInitializeEnumerate,
+                        udev) < 0) {
+        virReportSystemError(errno, "%s",
+                             _("failed to create udev enumerate thread"));
         goto cleanup;
+    }
 
     return 0;
 

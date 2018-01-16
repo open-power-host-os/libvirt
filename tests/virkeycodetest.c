@@ -41,24 +41,24 @@ static int testKeycodeMapping(const void *data ATTRIBUTE_UNUSED)
     int ret = -1;
     int got;
 
-#define TRANSLATE(from, to, val, want)                                  \
-    do {                                                                \
-        if ((got = virKeycodeValueTranslate(VIR_KEYCODE_SET_##from,     \
-                                            VIR_KEYCODE_SET_##to,       \
-                                            val)) != want) {            \
+#define TRANSLATE(from, to, val, want) \
+    do { \
+        if ((got = virKeycodeValueTranslate(VIR_KEYCODE_SET_##from, \
+                                            VIR_KEYCODE_SET_##to, \
+                                            val)) != want) { \
             fprintf(stderr, "Translating %d from %s to %s, got %d want %d\n", \
-                    val, #from, #to, got, want);                        \
-            goto cleanup;                                               \
-        }                                                               \
+                    val, #from, #to, got, want); \
+            goto cleanup; \
+        } \
     } while (0)
 
     TRANSLATE(LINUX, LINUX, 111, 111);
     TRANSLATE(LINUX, USB, 111, 76);
     TRANSLATE(LINUX, RFB, 88, 88);
     TRANSLATE(LINUX, RFB, 160, 163);
-    TRANSLATE(ATSET2, ATSET3, 259, 55);
+    TRANSLATE(ATSET2, ATSET3, 131, 55);
     TRANSLATE(OSX, WIN32, 90, 131);
-    TRANSLATE(OSX, ATSET1, 90, 0);
+    TRANSLATE(OSX, ATSET1, 90, 90);
     TRANSLATE(OSX, ATSET1, 3200, -1);
 
 #undef TRANSLATE
@@ -74,14 +74,14 @@ static int testKeycodeStrings(const void *data ATTRIBUTE_UNUSED)
     int ret = -1;
     int got;
 
-#define TRANSLATE(from, str, want)                                      \
-    do {                                                                \
-        if ((got = virKeycodeValueFromString(VIR_KEYCODE_SET_##from,    \
-                                             str)) != want) {           \
-            fprintf(stderr, "Converting %s from %s, got %d want %d\n",  \
-                    str, #from, got, want);                             \
-            goto cleanup;                                               \
-        }                                                               \
+#define TRANSLATE(from, str, want) \
+    do { \
+        if ((got = virKeycodeValueFromString(VIR_KEYCODE_SET_##from, \
+                                             str)) != want) { \
+            fprintf(stderr, "Converting %s from %s, got %d want %d\n", \
+                    str, #from, got, want); \
+            goto cleanup; \
+        } \
     } while (0)
 
     TRANSLATE(LINUX, "KEY_DELETE", 111);

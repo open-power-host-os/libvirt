@@ -34,6 +34,7 @@
 #include "virsysinfo.h"
 #include "viralloc.h"
 #include "vircommand.h"
+#include "virlog.h"
 #include "virfile.h"
 #include "virstring.h"
 
@@ -42,6 +43,7 @@
 
 #define VIR_FROM_THIS VIR_FROM_SYSINFO
 
+VIR_LOG_INIT("util.sysinfo");
 
 VIR_ENUM_IMPL(virSysinfo, VIR_SYSINFO_LAST,
               "smbios");
@@ -495,11 +497,12 @@ virSysinfoParseS390Processor(const char *base, virSysinfoDefPtr ret)
     char *tmp_base;
     char *manufacturer = NULL;
     char *procline = NULL;
+    char *ncpu = NULL;
     int result = -1;
     virSysinfoProcessorDefPtr processor;
 
     if (!(tmp_base = virSysinfoParseS390Line(base, "vendor_id", &manufacturer)))
-        goto cleanup;
+        goto error;
 
     /* Find processor N: line and gather the processor manufacturer,
        version, serial number, and family */
@@ -507,10 +510,10 @@ virSysinfoParseS390Processor(const char *base, virSysinfoDefPtr ret)
            && (tmp_base = virSysinfoParseS390Line(tmp_base, "processor ",
                                                   &procline))) {
         if (VIR_EXPAND_N(ret->processor, ret->nprocessor, 1) < 0)
-            goto cleanup;
+            goto error;
         processor = &ret->processor[ret->nprocessor - 1];
         if (VIR_STRDUP(processor->processor_manufacturer, manufacturer) < 0)
-            goto cleanup;
+            goto error;
         if (!virSysinfoParseS390Delimited(procline, "version",
                                           &processor->processor_version,
                                           '=', ',') ||
@@ -520,15 +523,43 @@ virSysinfoParseS390Processor(const char *base, virSysinfoDefPtr ret)
             !virSysinfoParseS390Delimited(procline, "machine",
                                           &processor->processor_family,
                                           '=', '\n'))
-            goto cleanup;
+            goto error;
 
         VIR_FREE(procline);
     }
-    result = 0;
+
+    /* now, for each processor found, extract the frequency information */
+    tmp_base = (char *) base;
+
+    while ((tmp_base = strstr(tmp_base, "cpu number")) &&
+           (tmp_base = virSysinfoParseS390Line(tmp_base, "cpu number", &ncpu))) {
+        unsigned int n;
+        char *mhz = NULL;
+
+        if (virStrToLong_uip(ncpu, NULL, 10, &n) < 0)
+            goto error;
+
+        if (n >= ret->nprocessor) {
+            VIR_DEBUG("CPU number '%u' out of range", n);
+            goto cleanup;
+        }
+
+        if (!(tmp_base = strstr(tmp_base, "cpu MHz static")) ||
+            !virSysinfoParseS390Line(tmp_base, "cpu MHz static", &mhz))
+            goto cleanup;
+
+        ret->processor[n].processor_max_speed = mhz;
+
+        VIR_FREE(ncpu);
+    }
 
  cleanup:
+    result = 0;
+
+ error:
     VIR_FREE(manufacturer);
     VIR_FREE(procline);
+    VIR_FREE(ncpu);
     return result;
 }
 
@@ -1063,7 +1094,7 @@ virSysinfoRead(void)
     return virSysinfoReadS390();
 #elif defined(WIN32) || \
     !(defined(__x86_64__) || \
-      defined(__i386__) ||   \
+      defined(__i386__) || \
       defined(__amd64__) || \
       defined(__arm__) || \
       defined(__aarch64__) || \
@@ -1312,14 +1343,14 @@ virSysinfoFormat(virBufferPtr buf, virSysinfoDefPtr def)
     return ret;
 }
 
-#define CHECK_FIELD(name, desc)                                         \
-    do {                                                                \
-        if (STRNEQ_NULLABLE(src->name, dst->name)) {                    \
-            virReportError(VIR_ERR_CONFIG_UNSUPPORTED,                  \
+#define CHECK_FIELD(name, desc) \
+    do { \
+        if (STRNEQ_NULLABLE(src->name, dst->name)) { \
+            virReportError(VIR_ERR_CONFIG_UNSUPPORTED, \
                            _("Target sysinfo %s %s does not match source %s"), \
                            desc, NULLSTR(dst->name), NULLSTR(src->name)); \
-            goto cleanup;                                               \
-        }                                                               \
+            goto cleanup; \
+        } \
     } while (0)
 
 static bool

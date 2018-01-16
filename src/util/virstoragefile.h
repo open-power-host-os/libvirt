@@ -303,6 +303,9 @@ struct _virStorageSource {
     bool tlsVerify;
 
     bool detected; /* true if this entry was not provided by the user */
+
+    unsigned int debugLevel;
+    bool debug;
 };
 
 
@@ -436,6 +439,14 @@ bool
 virStorageSourceIsBacking(const virStorageSource *src);
 bool
 virStorageSourceHasBacking(const virStorageSource *src);
+
+
+int
+virStorageSourcePrivateDataParseRelPath(xmlXPathContextPtr ctxt,
+                                        virStorageSourcePtr src);
+int
+virStorageSourcePrivateDataFormatRelPath(virStorageSourcePtr src,
+                                         virBufferPtr buf);
 
 
 #endif /* __VIR_STORAGE_FILE_H__ */

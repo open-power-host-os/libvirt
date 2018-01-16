@@ -16,11 +16,19 @@
   network inet stream,
   network inet6 stream,
 
+  ptrace (readby, tracedby) peer=/usr/sbin/libvirtd,
+
+  signal (receive) peer=/usr/sbin/libvirtd,
+
   /dev/net/tun rw,
   /dev/kvm rw,
   /dev/ptmx rw,
   /dev/kqemu rw,
   @{PROC}/*/status r,
+  # When qemu is signaled to terminate, it will read cmdline of signaling
+  # process for reporting purposes. Allowing read access to a process
+  # cmdline may leak sensitive information embedded in the cmdline.
+  @{PROC}/@{pid}/cmdline r,
   # Per man(5) proc, the kernel enforces that a thread may
   # only modify its comm value or those in its thread group.
   owner @{PROC}/@{pid}/task/@{tid}/comm rw,
@@ -73,14 +81,18 @@
   /usr/share/proll/** r,
   /usr/share/vgabios/** r,
   /usr/share/seabios/** r,
+  /usr/share/misc/sgabios.bin r,
   /usr/share/ovmf/** r,
   /usr/share/OVMF/** r,
   /usr/share/AAVMF/** r,
   /usr/share/qemu-efi/** r,
   /usr/share/slof/** r,
 
-  # access PKI infrastructure
-  /etc/pki/libvirt-vnc/** r,
+  # pki for libvirt-vnc and libvirt-spice (LP: #901272, #1690140)
+  /etc/pki/CA/ r,
+  /etc/pki/CA/* r,
+  /etc/pki/libvirt{,-spice,-vnc}/ r,
+  /etc/pki/libvirt{,-spice,-vnc}/** r,
 
   # the various binaries
   /usr/bin/kvm rmix,
@@ -129,7 +141,6 @@
   /usr/bin/qemu-mipsel rmix,
   /usr/bin/qemu-mipsn32 rmix,
   /usr/bin/qemu-mipsn32el rmix,
-  /usr/bin/qemu-nbd rmix,
   /usr/bin/qemu-or32 rmix,
   /usr/bin/qemu-ppc rmix,
   /usr/bin/qemu-ppc64 rmix,
@@ -143,14 +154,9 @@
   /usr/bin/qemu-sparc64 rmix,
   /usr/bin/qemu-unicore32 rmix,
   /usr/bin/qemu-x86_64 rmix,
-  /usr/{lib,lib64}/qemu/block-curl.so mr,
-  /usr/{lib,lib64}/qemu/block-rbd.so mr,
-
-  # for use by libvirt-vnc (LP: #901272)
-  /etc/pki/CA/ r,
-  /etc/pki/CA/* r,
-  /etc/pki/libvirt/ r,
-  /etc/pki/libvirt/** r,
+  # for Debian/Ubuntu qemu-block-extra / RPMs qemu-block-* (LP: #1554761)
+  /usr/{lib,lib64}/qemu/*.so mr,
+  /usr/lib/@{multiarch}/qemu/*.so mr,
 
   # for save and resume
   /{usr/,}bin/dash rmix,
@@ -169,6 +175,9 @@
   # for rbd
   /etc/ceph/ceph.conf r,
 
+  # for file-posix getting limits since 9103f1ce
+  /sys/devices/**/block/*/queue/max_segments r,
+
   # for ppc device-tree access
   @{PROC}/device-tree/ r,
   @{PROC}/device-tree/** r,
@@ -179,3 +188,7 @@
   /sys/devices/system/node/ r,
   /sys/devices/system/node/node[0-9]*/meminfo r,
   /sys/module/vhost/parameters/max_mem_regions r,
+
+  # silence refusals to open lttng files (see LP: #1432644)
+  deny /dev/shm/lttng-ust-wait-* r,
+  deny /run/shm/lttng-ust-wait-* r,

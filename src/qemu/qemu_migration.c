@@ -114,7 +114,7 @@ qemuMigrationCheckTLSCreds(virQEMUDriverPtr driver,
         goto cleanup;
 
     /* NB: Could steal NULL pointer too! Let caller decide what to do. */
-    VIR_STEAL_PTR(priv->migTLSAlias, migParams.migrateTLSAlias);
+    VIR_STEAL_PTR(priv->migTLSAlias, migParams.tlsCreds);
 
     ret = 0;
 
@@ -225,7 +225,7 @@ qemuMigrationAddTLSObjects(virQEMUDriverPtr driver,
                                 *tlsAlias, &tlsProps) < 0)
         goto error;
 
-    if (VIR_STRDUP(migParams->migrateTLSAlias, *tlsAlias) < 0)
+    if (VIR_STRDUP(migParams->tlsCreds, *tlsAlias) < 0)
         goto error;
 
     return 0;
@@ -611,17 +611,25 @@ qemuMigrationDriveMirrorReady(virQEMUDriverPtr driver,
     for (i = 0; i < vm->def->ndisks; i++) {
         virDomainDiskDefPtr disk = vm->def->disks[i];
         qemuDomainDiskPrivatePtr diskPriv = QEMU_DOMAIN_DISK_PRIVATE(disk);
+        char *error = NULL;
 
         if (!diskPriv->migrating)
             continue;
 
-        status = qemuBlockJobUpdate(driver, vm, asyncJob, disk);
+        status = qemuBlockJobUpdate(driver, vm, asyncJob, disk, &error);
         if (status == VIR_DOMAIN_BLOCK_JOB_FAILED) {
-            virReportError(VIR_ERR_OPERATION_FAILED,
-                           _("migration of disk %s failed"),
-                           disk->dst);
+            if (error) {
+                virReportError(VIR_ERR_OPERATION_FAILED,
+                               _("migration of disk %s failed: %s"),
+                               disk->dst, error);
+                VIR_FREE(error);
+            } else {
+                virReportError(VIR_ERR_OPERATION_FAILED,
+                               _("migration of disk %s failed"), disk->dst);
+            }
             return -1;
         }
+        VIR_FREE(error);
 
         if (disk->mirrorState != VIR_DOMAIN_DISK_MIRROR_STATE_READY)
             notReady++;
@@ -663,17 +671,23 @@ qemuMigrationDriveMirrorCancelled(virQEMUDriverPtr driver,
     for (i = 0; i < vm->def->ndisks; i++) {
         virDomainDiskDefPtr disk = vm->def->disks[i];
         qemuDomainDiskPrivatePtr diskPriv = QEMU_DOMAIN_DISK_PRIVATE(disk);
+        char *error = NULL;
 
         if (!diskPriv->migrating)
             continue;
 
-        status = qemuBlockJobUpdate(driver, vm, asyncJob, disk);
+        status = qemuBlockJobUpdate(driver, vm, asyncJob, disk, &error);
         switch (status) {
         case VIR_DOMAIN_BLOCK_JOB_FAILED:
             if (check) {
-                virReportError(VIR_ERR_OPERATION_FAILED,
-                               _("migration of disk %s failed"),
-                               disk->dst);
+                if (error) {
+                    virReportError(VIR_ERR_OPERATION_FAILED,
+                                   _("migration of disk %s failed: %s"),
+                                   disk->dst, error);
+                } else {
+                    virReportError(VIR_ERR_OPERATION_FAILED,
+                                   _("migration of disk %s failed"), disk->dst);
+                }
                 failed = true;
             }
             ATTRIBUTE_FALLTHROUGH;
@@ -689,6 +703,8 @@ qemuMigrationDriveMirrorCancelled(virQEMUDriverPtr driver,
 
         if (status == VIR_DOMAIN_BLOCK_JOB_COMPLETED)
             completed++;
+
+        VIR_FREE(error);
     }
 
     /* Updating completed block job drops the lock thus we have to recheck
@@ -736,24 +752,30 @@ qemuMigrationCancelOneDriveMirror(virQEMUDriverPtr driver,
 {
     qemuDomainObjPrivatePtr priv = vm->privateData;
     char *diskAlias = NULL;
+    char *error = NULL;
     int ret = -1;
     int status;
     int rv;
 
-    status = qemuBlockJobUpdate(driver, vm, asyncJob, disk);
+    status = qemuBlockJobUpdate(driver, vm, asyncJob, disk, &error);
     switch (status) {
     case VIR_DOMAIN_BLOCK_JOB_FAILED:
     case VIR_DOMAIN_BLOCK_JOB_CANCELED:
         if (failNoJob) {
-            virReportError(VIR_ERR_OPERATION_FAILED,
-                           _("migration of disk %s failed"),
-                           disk->dst);
-            return -1;
+            if (error) {
+                virReportError(VIR_ERR_OPERATION_FAILED,
+                               _("migration of disk %s failed: %s"),
+                               disk->dst, error);
+            } else {
+                virReportError(VIR_ERR_OPERATION_FAILED,
+                               _("migration of disk %s failed"), disk->dst);
+            }
+            goto cleanup;
         }
-        return 1;
-
+        ATTRIBUTE_FALLTHROUGH;
     case VIR_DOMAIN_BLOCK_JOB_COMPLETED:
-        return 1;
+        ret = 1;
+        goto cleanup;
     }
 
     if (!(diskAlias = qemuAliasFromDisk(disk)))
@@ -771,6 +793,7 @@ qemuMigrationCancelOneDriveMirror(virQEMUDriverPtr driver,
 
  cleanup:
     VIR_FREE(diskAlias);
+    VIR_FREE(error);
     return ret;
 }
 
@@ -1623,8 +1646,10 @@ qemuMigrationWaitForCompletion(virQEMUDriverPtr driver,
     qemuDomainJobInfoUpdateTime(jobInfo);
     qemuDomainJobInfoUpdateDowntime(jobInfo);
     VIR_FREE(priv->job.completed);
-    if (VIR_ALLOC(priv->job.completed) == 0)
+    if (VIR_ALLOC(priv->job.completed) == 0) {
         *priv->job.completed = *jobInfo;
+        priv->job.completed->status = QEMU_DOMAIN_JOB_STATUS_COMPLETED;
+    }
 
     if (asyncJob != QEMU_ASYNC_JOB_MIGRATION_OUT &&
         jobInfo->status == QEMU_DOMAIN_JOB_STATUS_QEMU_COMPLETED)
@@ -2349,8 +2374,8 @@ qemuMigrationParamsClear(qemuMonitorMigrationParamsPtr migParams)
     if (!migParams)
         return;
 
-    VIR_FREE(migParams->migrateTLSAlias);
-    VIR_FREE(migParams->migrateTLSHostname);
+    VIR_FREE(migParams->tlsCreds);
+    VIR_FREE(migParams->tlsHostname);
 }
 
 
@@ -2391,8 +2416,8 @@ qemuMigrationSetEmptyTLSParams(virQEMUDriverPtr driver,
    if (!priv->migTLSAlias)
        return 0;
 
-   if (VIR_STRDUP(migParams->migrateTLSAlias, "") < 0 ||
-       VIR_STRDUP(migParams->migrateTLSHostname, "") < 0)
+   if (VIR_STRDUP(migParams->tlsCreds, "") < 0 ||
+       VIR_STRDUP(migParams->tlsHostname, "") < 0)
        return -1;
 
     return 0;
@@ -2412,16 +2437,16 @@ qemuMigrationParams(virTypedParameterPtr params,
     if (!params)
         return migParams;
 
-#define GET(PARAM, VAR)                                                     \
-    do {                                                                    \
-        int rc;                                                             \
-        if ((rc = virTypedParamsGetInt(params, nparams,                     \
-                                       VIR_MIGRATE_PARAM_ ## PARAM,         \
-                                       &migParams->VAR)) < 0)               \
-            goto error;                                                     \
-                                                                            \
-        if (rc == 1)                                                        \
-            migParams->VAR ## _set = true;                                  \
+#define GET(PARAM, VAR) \
+    do { \
+        int rc; \
+        if ((rc = virTypedParamsGetInt(params, nparams, \
+                                       VIR_MIGRATE_PARAM_ ## PARAM, \
+                                       &migParams->VAR)) < 0) \
+            goto error; \
+ \
+        if (rc == 1) \
+            migParams->VAR ## _set = true; \
     } while (0)
 
     GET(AUTO_CONVERGE_INITIAL, cpuThrottleInitial);
@@ -2508,8 +2533,8 @@ qemuMigrationResetTLS(virQEMUDriverPtr driver,
     qemuDomainDelTLSObjects(driver, vm, asyncJob, secAlias, tlsAlias);
     qemuDomainSecretInfoFree(&priv->migSecinfo);
 
-    if (VIR_STRDUP(migParams.migrateTLSAlias, "") < 0 ||
-        VIR_STRDUP(migParams.migrateTLSHostname, "") < 0 ||
+    if (VIR_STRDUP(migParams.tlsCreds, "") < 0 ||
+        VIR_STRDUP(migParams.tlsHostname, "") < 0 ||
         qemuMigrationSetParams(driver, vm, asyncJob, &migParams) < 0)
         goto cleanup;
 
@@ -2774,7 +2799,7 @@ qemuMigrationPrepareAny(virQEMUDriverPtr driver,
             goto stopjob;
 
         /* Force reset of 'tls-hostname', it's a source only parameter */
-        if (VIR_STRDUP(migParams.migrateTLSHostname, "") < 0)
+        if (VIR_STRDUP(migParams.tlsHostname, "") < 0)
             goto stopjob;
 
     } else {
@@ -3737,12 +3762,11 @@ qemuMigrationRun(virQEMUDriverPtr driver,
          * connect directly to the destination. */
         if (spec->destType == MIGRATION_DEST_CONNECT_HOST ||
             spec->destType == MIGRATION_DEST_FD) {
-            if (VIR_STRDUP(migParams->migrateTLSHostname,
-                           spec->dest.host.name) < 0)
+            if (VIR_STRDUP(migParams->tlsHostname, spec->dest.host.name) < 0)
                 goto error;
         } else {
             /* Be sure there's nothing from a previous migration */
-            if (VIR_STRDUP(migParams->migrateTLSHostname, "") < 0)
+            if (VIR_STRDUP(migParams->tlsHostname, "") < 0)
                 goto error;
         }
     } else {
@@ -5457,8 +5481,9 @@ qemuMigrationFinish(virQEMUDriverPtr driver,
     }
 
     if (dom) {
-        priv->job.completed = jobInfo;
-        jobInfo = NULL;
+        VIR_STEAL_PTR(priv->job.completed, jobInfo);
+        priv->job.completed->status = QEMU_DOMAIN_JOB_STATUS_COMPLETED;
+
         if (qemuMigrationBakeCookie(mig, driver, vm, cookieout, cookieoutlen,
                                     QEMU_MIGRATION_COOKIE_STATS) < 0)
             VIR_WARN("Unable to encode migration cookie");
@@ -5888,17 +5913,17 @@ qemuMigrationCompressionParse(virTypedParameterPtr params,
         compression->methods |= 1ULL << method;
     }
 
-#define GET_PARAM(PARAM, TYPE, VALUE)                                       \
-    do {                                                                    \
-        int rc;                                                             \
-        const char *par = VIR_MIGRATE_PARAM_COMPRESSION_ ## PARAM;          \
-                                                                            \
-        if ((rc = virTypedParamsGet ## TYPE(params, nparams,                \
+#define GET_PARAM(PARAM, TYPE, VALUE) \
+    do { \
+        int rc; \
+        const char *par = VIR_MIGRATE_PARAM_COMPRESSION_ ## PARAM; \
+ \
+        if ((rc = virTypedParamsGet ## TYPE(params, nparams, \
                                             par, &compression->VALUE)) < 0) \
-            goto error;                                                     \
-                                                                            \
-        if (rc == 1)                                                        \
-            compression->VALUE ## _set = true;                              \
+            goto error; \
+ \
+        if (rc == 1) \
+            compression->VALUE ## _set = true; \
     } while (0)
 
     if (params) {

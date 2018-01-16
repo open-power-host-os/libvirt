@@ -38,6 +38,7 @@
 # include "virthread.h"
 # include "virpolkit.h"
 # include "vsh.h"
+# include "virsh-completer.h"
 
 # define VIRSH_PROMPT_RW    "virsh # "
 # define VIRSH_PROMPT_RO    "virsh > "
@@ -63,44 +64,46 @@
 /*
  * Common command options
  */
-# define VIRSH_COMMON_OPT_POOL(_helpstr)                          \
-    {.name = "pool",                                              \
-     .type = VSH_OT_DATA,                                         \
-     .flags = VSH_OFLAG_REQ,                                      \
-     .help = _helpstr                                             \
-    }                                                             \
+# define VIRSH_COMMON_OPT_POOL(_helpstr) \
+    {.name = "pool", \
+     .type = VSH_OT_DATA, \
+     .flags = VSH_OFLAG_REQ, \
+     .help = _helpstr \
+    }
 
-# define VIRSH_COMMON_OPT_DOMAIN(_helpstr)                        \
-    {.name = "domain",                                            \
-     .type = VSH_OT_DATA,                                         \
-     .flags = VSH_OFLAG_REQ,                                      \
-     .help = _helpstr                                             \
-    }                                                             \
+# define VIRSH_COMMON_OPT_DOMAIN(_helpstr, cflags) \
+    {.name = "domain", \
+     .type = VSH_OT_DATA, \
+     .flags = VSH_OFLAG_REQ, \
+     .help = _helpstr, \
+     .completer = virshDomainNameCompleter, \
+     .completer_flags = cflags, \
+    }
 
-# define VIRSH_COMMON_OPT_CONFIG(_helpstr)                        \
-    {.name = "config",                                            \
-     .type = VSH_OT_BOOL,                                         \
-     .help = _helpstr                                             \
-    }                                                             \
+# define VIRSH_COMMON_OPT_CONFIG(_helpstr) \
+    {.name = "config", \
+     .type = VSH_OT_BOOL, \
+     .help = _helpstr \
+    }
 
-# define VIRSH_COMMON_OPT_LIVE(_helpstr)                          \
-    {.name = "live",                                              \
-     .type = VSH_OT_BOOL,                                         \
-     .help = _helpstr                                             \
-    }                                                             \
+# define VIRSH_COMMON_OPT_LIVE(_helpstr) \
+    {.name = "live", \
+     .type = VSH_OT_BOOL, \
+     .help = _helpstr \
+    }
 
-# define VIRSH_COMMON_OPT_CURRENT(_helpstr)                       \
-    {.name = "current",                                           \
-     .type = VSH_OT_BOOL,                                         \
-     .help = _helpstr                                             \
-    }                                                             \
+# define VIRSH_COMMON_OPT_CURRENT(_helpstr) \
+    {.name = "current", \
+     .type = VSH_OT_BOOL, \
+     .help = _helpstr \
+    }
 
-# define VIRSH_COMMON_OPT_FILE(_helpstr)                          \
-    {.name = "file",                                              \
-     .type = VSH_OT_DATA,                                         \
-     .flags = VSH_OFLAG_REQ,                                      \
-     .help = _helpstr                                             \
-    }                                                             \
+# define VIRSH_COMMON_OPT_FILE(_helpstr) \
+    {.name = "file", \
+     .type = VSH_OT_DATA, \
+     .flags = VSH_OFLAG_REQ, \
+     .help = _helpstr \
+    }
 
 typedef struct _virshControl virshControl;
 typedef virshControl *virshControlPtr;

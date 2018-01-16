@@ -39,7 +39,7 @@
 # include "virobject.h"
 # include "logging/log_manager.h"
 
-# define QEMU_DOMAIN_FORMAT_LIVE_FLAGS      \
+# define QEMU_DOMAIN_FORMAT_LIVE_FLAGS \
     (VIR_DOMAIN_XML_SECURE)
 
 # if ULONG_MAX == 4294967295
@@ -51,14 +51,14 @@
 # endif
 
 # define JOB_MASK(job)                  (job == 0 ? 0 : 1 << (job - 1))
-# define QEMU_JOB_DEFAULT_MASK          \
-    (JOB_MASK(QEMU_JOB_QUERY) |         \
-     JOB_MASK(QEMU_JOB_DESTROY) |       \
+# define QEMU_JOB_DEFAULT_MASK \
+    (JOB_MASK(QEMU_JOB_QUERY) | \
+     JOB_MASK(QEMU_JOB_DESTROY) | \
      JOB_MASK(QEMU_JOB_ABORT))
 
 /* Jobs which have to be tracked in domain state XML. */
-# define QEMU_DOMAIN_TRACK_JOBS         \
-    (JOB_MASK(QEMU_JOB_DESTROY) |       \
+# define QEMU_DOMAIN_TRACK_JOBS \
+    (JOB_MASK(QEMU_JOB_DESTROY) | \
      JOB_MASK(QEMU_JOB_ASYNC))
 
 /* Only 1 job is allowed at any time
@@ -331,7 +331,7 @@ struct _qemuDomainObjPrivate {
     virBitmapPtr migrationCaps;
 };
 
-# define QEMU_DOMAIN_PRIVATE(vm)        \
+# define QEMU_DOMAIN_PRIVATE(vm) \
     ((qemuDomainObjPrivatePtr) (vm)->privateData)
 
 # define QEMU_DOMAIN_DISK_PRIVATE(disk) \
@@ -350,6 +350,7 @@ struct _qemuDomainDiskPrivate {
     /* for some synchronous block jobs, we need to notify the owner */
     int blockJobType;   /* type of the block job from the event */
     int blockJobStatus; /* status of the finished block job */
+    char *blockJobError; /* block job completed event error */
     bool blockJobSync; /* the block job needs synchronized termination */
 
     bool migrating; /* the disk is being migrated */
@@ -376,10 +377,6 @@ struct _qemuDomainStorageSourcePrivate {
 
 virObjectPtr qemuDomainStorageSourcePrivateNew(void);
 
-# define QEMU_DOMAIN_HOSTDEV_PRIVATE(hostdev)   \
-    ((qemuDomainHostdevPrivatePtr) (hostdev)->privateData)
-
-
 typedef struct _qemuDomainVcpuPrivate qemuDomainVcpuPrivate;
 typedef qemuDomainVcpuPrivate *qemuDomainVcpuPrivatePtr;
 struct _qemuDomainVcpuPrivate {
@@ -400,7 +397,7 @@ struct _qemuDomainVcpuPrivate {
     int vcpus;
 };
 
-# define QEMU_DOMAIN_VCPU_PRIVATE(vcpu)    \
+# define QEMU_DOMAIN_VCPU_PRIVATE(vcpu) \
     ((qemuDomainVcpuPrivatePtr) (vcpu)->privateData)
 
 
@@ -414,17 +411,7 @@ struct qemuDomainDiskInfo {
     char *nodename;
 };
 
-typedef struct _qemuDomainHostdevPrivate qemuDomainHostdevPrivate;
-typedef qemuDomainHostdevPrivate *qemuDomainHostdevPrivatePtr;
-struct _qemuDomainHostdevPrivate {
-    virObject parent;
-
-    /* for hostdev storage devices using auth/secret
-     * NB: *not* to be written to qemu domain object XML */
-    qemuDomainSecretInfoPtr secinfo;
-};
-
-# define QEMU_DOMAIN_CHR_SOURCE_PRIVATE(dev)    \
+# define QEMU_DOMAIN_CHR_SOURCE_PRIVATE(dev) \
     ((qemuDomainChrSourcePrivatePtr) (dev)->privateData)
 
 typedef struct _qemuDomainChrSourcePrivate qemuDomainChrSourcePrivate;
@@ -679,7 +666,8 @@ bool qemuDomainDiskChangeSupported(virDomainDiskDefPtr disk,
 
 int qemuDomainStorageFileInit(virQEMUDriverPtr driver,
                               virDomainObjPtr vm,
-                              virStorageSourcePtr src);
+                              virStorageSourcePtr src,
+                              virStorageSourcePtr parent);
 char *qemuDomainStorageAlias(const char *device, int depth);
 
 void qemuDomainDiskChainElementRevoke(virQEMUDriverPtr driver,
@@ -688,7 +676,8 @@ void qemuDomainDiskChainElementRevoke(virQEMUDriverPtr driver,
 int qemuDomainDiskChainElementPrepare(virQEMUDriverPtr driver,
                                       virDomainObjPtr vm,
                                       virStorageSourcePtr elem,
-                                      bool readonly);
+                                      bool readonly,
+                                      bool newSource);
 
 int qemuDomainCleanupAdd(virDomainObjPtr vm,
                          qemuDomainCleanupCallback cb);
@@ -837,11 +826,6 @@ qemuDomainSecretInfoTLSNew(virConnectPtr conn,
                            const char *srcAlias,
                            const char *secretUUID);
 
-int qemuDomainSecretDiskPrepare(virConnectPtr conn,
-                                qemuDomainObjPrivatePtr priv,
-                                virDomainDiskDefPtr disk)
-    ATTRIBUTE_NONNULL(1) ATTRIBUTE_NONNULL(2) ATTRIBUTE_NONNULL(3);
-
 void qemuDomainSecretHostdevDestroy(virDomainHostdevDefPtr disk)
     ATTRIBUTE_NONNULL(1);
 
@@ -884,12 +868,6 @@ void qemuDomainPrepareChardevSource(virDomainDefPtr def,
                                     virQEMUDriverConfigPtr cfg)
     ATTRIBUTE_NONNULL(1) ATTRIBUTE_NONNULL(2);
 
-int
-qemuDomainPrepareDiskSourceTLS(virStorageSourcePtr src,
-                               const char *diskAlias,
-                               virQEMUDriverConfigPtr cfg)
-    ATTRIBUTE_NONNULL(1) ATTRIBUTE_NONNULL(3);
-
 int qemuDomainPrepareShmemChardev(virDomainShmemDefPtr shmem)
     ATTRIBUTE_NONNULL(1);
 
@@ -928,45 +906,41 @@ void qemuDomainDestroyNamespace(virQEMUDriverPtr driver,
 
 bool qemuDomainNamespaceAvailable(qemuDomainNamespace ns);
 
-int qemuDomainNamespaceSetupDisk(virQEMUDriverPtr driver,
-                                 virDomainObjPtr vm,
+int qemuDomainNamespaceSetupDisk(virDomainObjPtr vm,
                                  virStorageSourcePtr src);
 
-int qemuDomainNamespaceTeardownDisk(virQEMUDriverPtr driver,
-                                    virDomainObjPtr vm,
+int qemuDomainNamespaceTeardownDisk(virDomainObjPtr vm,
                                     virStorageSourcePtr src);
 
-int qemuDomainNamespaceSetupHostdev(virQEMUDriverPtr driver,
-                                    virDomainObjPtr vm,
+int qemuDomainNamespaceSetupHostdev(virDomainObjPtr vm,
                                     virDomainHostdevDefPtr hostdev);
 
-int qemuDomainNamespaceTeardownHostdev(virQEMUDriverPtr driver,
-                                       virDomainObjPtr vm,
+int qemuDomainNamespaceTeardownHostdev(virDomainObjPtr vm,
                                        virDomainHostdevDefPtr hostdev);
 
-int qemuDomainNamespaceSetupMemory(virQEMUDriverPtr driver,
-                                   virDomainObjPtr vm,
+int qemuDomainNamespaceSetupMemory(virDomainObjPtr vm,
                                    virDomainMemoryDefPtr memory);
 
-int qemuDomainNamespaceTeardownMemory(virQEMUDriverPtr driver,
-                                      virDomainObjPtr vm,
+int qemuDomainNamespaceTeardownMemory(virDomainObjPtr vm,
                                       virDomainMemoryDefPtr memory);
 
-int qemuDomainNamespaceSetupChardev(virQEMUDriverPtr driver,
-                                    virDomainObjPtr vm,
+int qemuDomainNamespaceSetupChardev(virDomainObjPtr vm,
                                     virDomainChrDefPtr chr);
 
-int qemuDomainNamespaceTeardownChardev(virQEMUDriverPtr driver,
-                                       virDomainObjPtr vm,
+int qemuDomainNamespaceTeardownChardev(virDomainObjPtr vm,
                                        virDomainChrDefPtr chr);
 
-int qemuDomainNamespaceSetupRNG(virQEMUDriverPtr driver,
-                                virDomainObjPtr vm,
+int qemuDomainNamespaceSetupRNG(virDomainObjPtr vm,
                                 virDomainRNGDefPtr rng);
 
-int qemuDomainNamespaceTeardownRNG(virQEMUDriverPtr driver,
-                                   virDomainObjPtr vm,
+int qemuDomainNamespaceTeardownRNG(virDomainObjPtr vm,
                                    virDomainRNGDefPtr rng);
+
+int qemuDomainNamespaceSetupInput(virDomainObjPtr vm,
+                                  virDomainInputDefPtr input);
+
+int qemuDomainNamespaceTeardownInput(virDomainObjPtr vm,
+                                     virDomainInputDefPtr input);
 
 virDomainDiskDefPtr qemuDomainDiskLookupByNodename(virDomainDefPtr def,
                                                    const char *nodename,
@@ -1009,5 +983,11 @@ int
 qemuDomainCheckMigrationCapabilities(virQEMUDriverPtr driver,
                                      virDomainObjPtr vm,
                                      qemuDomainAsyncJob asyncJob);
+
+int
+qemuDomainPrepareDiskSource(virConnectPtr conn,
+                            virDomainDiskDefPtr disk,
+                            qemuDomainObjPrivatePtr priv,
+                            virQEMUDriverConfigPtr cfg);
 
 #endif /* __QEMU_DOMAIN_H__ */

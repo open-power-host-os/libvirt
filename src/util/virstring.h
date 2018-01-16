@@ -46,6 +46,9 @@ char **virStringListAdd(const char **strings,
 void virStringListRemove(char ***strings,
                          const char *item);
 
+int virStringListMerge(char ***dst,
+                       char ***src);
+
 int virStringListCopy(char ***dst,
                       const char **src);
 
@@ -192,7 +195,7 @@ int virVasprintfInternal(bool report, int domcode, const char *filename,
  * Returns -1 on failure (with OOM error reported), 0 if @src was NULL,
  * 1 if @src was copied
  */
-# define VIR_STRNDUP(dst, src, n) virStrndup(&(dst), src, n, true,    \
+# define VIR_STRNDUP(dst, src, n) virStrndup(&(dst), src, n, true, \
                                              VIR_FROM_THIS, __FILE__, \
                                              __FUNCTION__, __LINE__)
 
@@ -293,6 +296,7 @@ bool virStringHasChars(const char *str,
                        const char *chars);
 bool virStringHasControlChars(const char *str);
 void virStringStripControlChars(char *str);
+void virStringFilterChars(char *str, const char *valid);
 
 bool virStringIsPrintable(const char *str);
 bool virStringBufferIsPrintable(const uint8_t *buf, size_t buflen);

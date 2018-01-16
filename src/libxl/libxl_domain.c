@@ -294,18 +294,6 @@ libxlDomainDeviceDefPostParse(virDomainDeviceDefPtr dev,
         def->os.type != VIR_DOMAIN_OSTYPE_HVM)
         dev->data.chr->targetType = VIR_DOMAIN_CHR_CONSOLE_TARGET_TYPE_XEN;
 
-    if (dev->type == VIR_DOMAIN_DEVICE_NET &&
-            (dev->data.net->type == VIR_DOMAIN_NET_TYPE_BRIDGE ||
-             dev->data.net->type == VIR_DOMAIN_NET_TYPE_ETHERNET ||
-             dev->data.net->type == VIR_DOMAIN_NET_TYPE_NETWORK)) {
-        if (dev->data.net->guestIP.nips > 1) {
-            virReportError(VIR_ERR_CONFIG_UNSUPPORTED,
-                    _("multiple IP addresses not supported on device type %s"),
-                    virDomainNetTypeToString(dev->data.net->type));
-            return -1;
-        }
-    }
-
     if (dev->type == VIR_DOMAIN_DEVICE_HOSTDEV ||
         (dev->type == VIR_DOMAIN_DEVICE_NET &&
          dev->data.net->type == VIR_DOMAIN_NET_TYPE_HOSTDEV)) {
@@ -415,10 +403,15 @@ libxlDomainDefPostParse(virDomainDefPtr def,
     if (xenDomainDefAddImplicitInputDevice(def) < 0)
         return -1;
 
-    /* For x86_64 HVM, always enable pae */
+    /* For x86_64 HVM */
     if (def->os.type == VIR_DOMAIN_OSTYPE_HVM &&
         def->os.arch == VIR_ARCH_X86_64) {
+        /* always enable pae */
         def->features[VIR_DOMAIN_FEATURE_PAE] = VIR_TRISTATE_SWITCH_ON;
+
+        /* if vnuma is effective enable acpi */
+        if (virDomainNumaGetNodeCount(def->numa) > 0)
+            def->features[VIR_DOMAIN_FEATURE_ACPI] = VIR_TRISTATE_SWITCH_ON;
     }
 
     return 0;

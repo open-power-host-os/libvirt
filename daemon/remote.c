@@ -58,15 +58,15 @@
 VIR_LOG_INIT("daemon.remote");
 
 #if SIZEOF_LONG < 8
-# define HYPER_TO_TYPE(_type, _to, _from)                               \
-    do {                                                                \
-        if ((_from) != (_type)(_from)) {                                \
-            virReportError(VIR_ERR_OVERFLOW,                            \
+# define HYPER_TO_TYPE(_type, _to, _from) \
+    do { \
+        if ((_from) != (_type)(_from)) { \
+            virReportError(VIR_ERR_OVERFLOW, \
                            _("conversion from hyper to %s overflowed"), \
-                           #_type);                                     \
-            goto cleanup;                                               \
-        }                                                               \
-        (_to) = (_from);                                                \
+                           #_type); \
+            goto cleanup; \
+        } \
+        (_to) = (_from); \
     } while (0)
 
 # define HYPER_TO_LONG(_to, _from) HYPER_TO_TYPE(long, _to, _from)
@@ -1670,23 +1670,62 @@ void remoteRelayConnectionClosedEvent(virConnectPtr conn ATTRIBUTE_UNUSED, int r
                                   &msg);
 }
 
-#define DEREG_CB(conn, eventCallbacks, neventCallbacks, deregFcn, name)     \
-    do {                                                                    \
-        size_t i;                                                           \
-        for (i = 0; i < neventCallbacks; i++) {                             \
-            int callbackID = eventCallbacks[i]->callbackID;                 \
-            if (callbackID < 0) {                                           \
+#define DEREG_CB(conn, eventCallbacks, neventCallbacks, deregFcn, name) \
+    do { \
+        size_t i; \
+        for (i = 0; i < neventCallbacks; i++) { \
+            int callbackID = eventCallbacks[i]->callbackID; \
+            if (callbackID < 0) { \
                 VIR_WARN("unexpected incomplete %s callback %zu", name, i); \
-                continue;                                                   \
-            }                                                               \
-            VIR_DEBUG("Deregistering remote %s event relay %d",             \
-                      name, callbackID);                                    \
-            eventCallbacks[i]->callbackID = -1;                             \
-            if (deregFcn(conn, callbackID) < 0)                             \
-                VIR_WARN("unexpected %s event deregister failure", name);   \
-        }                                                                   \
-        VIR_FREE(eventCallbacks);                                           \
+                continue; \
+            } \
+            VIR_DEBUG("Deregistering remote %s event relay %d", \
+                      name, callbackID); \
+            eventCallbacks[i]->callbackID = -1; \
+            if (deregFcn(conn, callbackID) < 0) \
+                VIR_WARN("unexpected %s event deregister failure", name); \
+        } \
+        VIR_FREE(eventCallbacks); \
+        neventCallbacks = 0; \
     } while (0);
+
+
+static void
+remoteClientFreePrivateCallbacks(struct daemonClientPrivate *priv)
+{
+    virIdentityPtr sysident = virIdentityGetSystem();
+    virIdentitySetCurrent(sysident);
+
+    DEREG_CB(priv->conn, priv->domainEventCallbacks,
+             priv->ndomainEventCallbacks,
+             virConnectDomainEventDeregisterAny, "domain");
+    DEREG_CB(priv->conn, priv->networkEventCallbacks,
+             priv->nnetworkEventCallbacks,
+             virConnectNetworkEventDeregisterAny, "network");
+    DEREG_CB(priv->conn, priv->storageEventCallbacks,
+             priv->nstorageEventCallbacks,
+             virConnectStoragePoolEventDeregisterAny, "storage");
+    DEREG_CB(priv->conn, priv->nodeDeviceEventCallbacks,
+             priv->nnodeDeviceEventCallbacks,
+             virConnectNodeDeviceEventDeregisterAny, "node device");
+    DEREG_CB(priv->conn, priv->secretEventCallbacks,
+             priv->nsecretEventCallbacks,
+             virConnectSecretEventDeregisterAny, "secret");
+    DEREG_CB(priv->conn, priv->qemuEventCallbacks,
+             priv->nqemuEventCallbacks,
+             virConnectDomainQemuMonitorEventDeregister, "qemu monitor");
+
+    if (priv->closeRegistered) {
+        if (virConnectUnregisterCloseCallback(priv->conn,
+                                              remoteRelayConnectionClosedEvent) < 0)
+            VIR_WARN("unexpected close callback event deregister failure");
+    }
+
+    virIdentitySetCurrent(NULL);
+    virObjectUnref(sysident);
+}
+#undef DEREG_CB
+
 
 /*
  * You must hold lock for at least the client
@@ -1699,46 +1738,11 @@ void remoteClientFreeFunc(void *data)
 {
     struct daemonClientPrivate *priv = data;
 
-    /* Deregister event delivery callback */
-    if (priv->conn) {
-        virIdentityPtr sysident = virIdentityGetSystem();
-
-        virIdentitySetCurrent(sysident);
-
-        DEREG_CB(priv->conn, priv->domainEventCallbacks,
-                 priv->ndomainEventCallbacks,
-                 virConnectDomainEventDeregisterAny, "domain");
-        DEREG_CB(priv->conn, priv->networkEventCallbacks,
-                 priv->nnetworkEventCallbacks,
-                 virConnectNetworkEventDeregisterAny, "network");
-        DEREG_CB(priv->conn, priv->storageEventCallbacks,
-                 priv->nstorageEventCallbacks,
-                 virConnectStoragePoolEventDeregisterAny, "storage");
-        DEREG_CB(priv->conn, priv->nodeDeviceEventCallbacks,
-                 priv->nnodeDeviceEventCallbacks,
-                 virConnectNodeDeviceEventDeregisterAny, "node device");
-        DEREG_CB(priv->conn, priv->secretEventCallbacks,
-                 priv->nsecretEventCallbacks,
-                 virConnectSecretEventDeregisterAny, "secret");
-        DEREG_CB(priv->conn, priv->qemuEventCallbacks,
-                 priv->nqemuEventCallbacks,
-                 virConnectDomainQemuMonitorEventDeregister, "qemu monitor");
-
-        if (priv->closeRegistered) {
-            if (virConnectUnregisterCloseCallback(priv->conn,
-                                                  remoteRelayConnectionClosedEvent) < 0)
-                VIR_WARN("unexpected close callback event deregister failure");
-        }
-
+    if (priv->conn)
         virConnectClose(priv->conn);
-
-        virIdentitySetCurrent(NULL);
-        virObjectUnref(sysident);
-    }
 
     VIR_FREE(priv);
 }
-#undef DEREG_CB
 
 
 static void remoteClientCloseFunc(virNetServerClientPtr client)
@@ -1746,6 +1750,10 @@ static void remoteClientCloseFunc(virNetServerClientPtr client)
     struct daemonClientPrivate *priv = virNetServerClientGetPrivateData(client);
 
     daemonRemoveAllClientStreams(priv->streams);
+
+    /* Deregister event delivery callback */
+    if (priv->conn)
+        remoteClientFreePrivateCallbacks(priv);
 }
 
 
@@ -1806,6 +1814,11 @@ remoteDispatchConnectOpen(virNetServerPtr server ATTRIBUTE_UNUSED,
     if (priv->conn == NULL)
         goto cleanup;
 
+    /* force update the @readonly attribute which was inherited from the
+     * virNetServerService object - this is important for sockets that are RW
+     * by default, but do accept RO flags, e.g. TCP
+     */
+    virNetServerClientSetReadonly(client, (flags & VIR_CONNECT_RO));
     rv = 0;
 
  cleanup:
@@ -3255,8 +3268,7 @@ remoteDispatchAuthList(virNetServerPtr server,
                             (long long) callerPid, (int) callerUid) < 0)
                 goto cleanup;
             VIR_INFO("Bypass polkit auth for privileged client %s", ident);
-            virNetServerClientSetAuth(client, 0);
-            virNetServerTrackCompletedAuth(server);
+            virNetServerSetClientAuthenticated(server, client);
             auth = VIR_NET_SERVER_SERVICE_AUTH_NONE;
             VIR_FREE(ident);
         }
@@ -3266,7 +3278,7 @@ remoteDispatchAuthList(virNetServerPtr server,
     if (VIR_ALLOC_N(ret->types.types_val, ret->types.types_len) < 0)
         goto cleanup;
 
-    switch (auth) {
+    switch ((virNetServerServiceAuthMethods) auth) {
     case VIR_NET_SERVER_SERVICE_AUTH_NONE:
         ret->types.types_val[0] = REMOTE_AUTH_NONE;
         break;
@@ -3276,8 +3288,6 @@ remoteDispatchAuthList(virNetServerPtr server,
     case VIR_NET_SERVER_SERVICE_AUTH_SASL:
         ret->types.types_val[0] = REMOTE_AUTH_SASL;
         break;
-    default:
-        ret->types.types_val[0] = REMOTE_AUTH_NONE;
     }
 
     rv = 0;
@@ -3401,8 +3411,7 @@ remoteSASLFinish(virNetServerPtr server,
     if (!(clnt_identity = virNetServerClientGetIdentity(client)))
         goto error;
 
-    virNetServerClientSetAuth(client, 0);
-    virNetServerTrackCompletedAuth(server);
+    virNetServerSetClientAuthenticated(server, client);
     virNetServerClientSetSASLSession(client, priv->sasl);
     virIdentitySetSASLUserName(clnt_identity, identity);
 
@@ -3725,8 +3734,7 @@ remoteDispatchAuthPolkit(virNetServerPtr server,
              action, (long long) callerPid, callerUid);
     ret->complete = 1;
 
-    virNetServerClientSetAuth(client, 0);
-    virNetServerTrackCompletedAuth(server);
+    virNetServerSetClientAuthenticated(server, client);
     virMutexUnlock(&priv->lock);
 
     return 0;

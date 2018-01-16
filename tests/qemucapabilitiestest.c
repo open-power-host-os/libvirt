@@ -61,10 +61,16 @@ testQemuCaps(const void *opaque)
                                   qemuMonitorTestGetMonitor(mon)) < 0)
         goto cleanup;
 
-    if (virQEMUCapsGet(capsActual, QEMU_CAPS_KVM) &&
-        virQEMUCapsInitQMPMonitorTCG(capsActual,
-                                     qemuMonitorTestGetMonitor(mon)) < 0)
-        goto cleanup;
+    if (virQEMUCapsGet(capsActual, QEMU_CAPS_KVM)) {
+        if (virQEMUCapsInitQMPMonitorTCG(capsActual,
+                                         qemuMonitorTestGetMonitor(mon)) < 0)
+            goto cleanup;
+
+        /* Fill microcodeVersion with a "random" value which is the file
+         * length to provide a reproducible number for testing.
+         */
+        virQEMUCapsSetMicrocodeVersion(capsActual, virFileLength(repliesFile, -1));
+    }
 
     if (!(actual = virQEMUCapsFormatCache(capsActual)))
         goto cleanup;
@@ -146,15 +152,15 @@ mymain(void)
 
     data.xmlopt = driver.xmlopt;
 
-#define DO_TEST(arch, name)                                             \
-    do {                                                                \
-        data.archName = arch;                                           \
-        data.base = name;                                               \
-        if (virTestRun(name "(" arch ")", testQemuCaps, &data) < 0)     \
-            ret = -1;                                                   \
-        if (virTestRun("copy " name "(" arch ")",                       \
-                       testQemuCapsCopy, &data) < 0)                    \
-            ret = -1;                                                   \
+#define DO_TEST(arch, name) \
+    do { \
+        data.archName = arch; \
+        data.base = name; \
+        if (virTestRun(name "(" arch ")", testQemuCaps, &data) < 0) \
+            ret = -1; \
+        if (virTestRun("copy " name "(" arch ")", \
+                       testQemuCapsCopy, &data) < 0) \
+            ret = -1; \
     } while (0)
 
     DO_TEST("x86_64", "caps_1.2.2");
@@ -173,8 +179,11 @@ mymain(void)
     DO_TEST("x86_64", "caps_2.10.0");
     DO_TEST("aarch64", "caps_2.6.0-gicv2");
     DO_TEST("aarch64", "caps_2.6.0-gicv3");
-    DO_TEST("ppc64le", "caps_2.6.0");
-    DO_TEST("ppc64le", "caps_2.9.0");
+    DO_TEST("aarch64", "caps_2.10.0-gicv2");
+    DO_TEST("aarch64", "caps_2.10.0-gicv3");
+    DO_TEST("ppc64", "caps_2.6.0");
+    DO_TEST("ppc64", "caps_2.9.0");
+    DO_TEST("ppc64", "caps_2.10.0");
     DO_TEST("s390x", "caps_2.7.0");
     DO_TEST("s390x", "caps_2.8.0");
     DO_TEST("s390x", "caps_2.9.0");

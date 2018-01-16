@@ -137,8 +137,10 @@
   <flag name='chardev-reconnect'/>
   <flag name='virtio-gpu.max_outputs'/>
   <flag name='virtio-blk.num-queues'/>
+  <flag name='sclplmconsole'/>
   <version>2007093</version>
   <kvmVersion>0</kvmVersion>
+  <microcodeVersion>242460</microcodeVersion>
   <package></package>
   <arch>s390x</arch>
   <hostCPU type='kvm' model='zEC12.2-base' migratability='no'>

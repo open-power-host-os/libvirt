@@ -316,14 +316,14 @@ mymain(void)
         return ret;
     }
 
-# define EXEC_RESTART_TEST_FULL(file, nservers, pass)         \
-    do {                                                      \
-        struct testExecRestartData data = {                   \
-            file, server_names, nservers, pass                \
-        };                                                    \
-        if (virTestRun("ExecRestart " file,                   \
-                       testExecRestart, &data) < 0)           \
-            ret = -1;                                         \
+# define EXEC_RESTART_TEST_FULL(file, nservers, pass) \
+    do { \
+        struct testExecRestartData data = { \
+            file, server_names, nservers, pass \
+        }; \
+        if (virTestRun("ExecRestart " file, \
+                       testExecRestart, &data) < 0) \
+            ret = -1; \
     } while (0)
 
 # define EXEC_RESTART_TEST(file, N) EXEC_RESTART_TEST_FULL(file, N, true)
@@ -341,6 +341,8 @@ mymain(void)
     EXEC_RESTART_TEST("client-ids", 1);
     EXEC_RESTART_TEST("client-timestamp", 1);
     EXEC_RESTART_TEST_FAIL("anon-clients", 2);
+    EXEC_RESTART_TEST("client-auth-pending", 1);
+    EXEC_RESTART_TEST_FAIL("client-auth-pending-failure", 1);
 
     return ret == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
 }

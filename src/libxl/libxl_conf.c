@@ -49,6 +49,7 @@
 #include "virstoragefile.h"
 #include "secret_util.h"
 #include "cpu/cpu.h"
+#include "xen_common.h"
 
 
 #define VIR_FROM_THIS VIR_FROM_LIBXL
@@ -593,6 +594,120 @@ libxlMakeDomBuildInfo(virDomainDefPtr def,
     return 0;
 }
 
+#ifdef LIBXL_HAVE_VNUMA
+static int
+libxlMakeVnumaList(virDomainDefPtr def,
+                   libxl_ctx *ctx,
+                   libxl_domain_config *d_config)
+{
+    int ret = -1;
+    size_t i, j;
+    size_t nr_nodes;
+    size_t num_vnuma;
+    bool simulate = false;
+    virBitmapPtr bitmap = NULL;
+    virDomainNumaPtr numa = def->numa;
+    libxl_domain_build_info *b_info = &d_config->b_info;
+    libxl_physinfo physinfo;
+    libxl_vnode_info *vnuma_nodes = NULL;
+
+    if (!numa)
+        return 0;
+
+    num_vnuma = virDomainNumaGetNodeCount(numa);
+    if (!num_vnuma)
+        return 0;
+
+    libxl_physinfo_init(&physinfo);
+    if (libxl_get_physinfo(ctx, &physinfo) < 0) {
+        libxl_physinfo_dispose(&physinfo);
+        virReportError(VIR_ERR_INTERNAL_ERROR, "%s",
+                       _("libxl_get_physinfo_info failed"));
+        return -1;
+    }
+    nr_nodes = physinfo.nr_nodes;
+    libxl_physinfo_dispose(&physinfo);
+
+    if (num_vnuma > nr_nodes) {
+        VIR_WARN("Number of configured numa cells %zu exceeds available physical nodes %zu. All cells will use physical node 0",
+                 num_vnuma, nr_nodes);
+        simulate = true;
+    }
+
+    /*
+     * allocate the vnuma_nodes for assignment under b_info.
+     */
+    if (VIR_ALLOC_N(vnuma_nodes, num_vnuma) < 0)
+        return -1;
+
+    /*
+     * parse the vnuma vnodes data.
+     */
+    for (i = 0; i < num_vnuma; i++) {
+        int cpu;
+        libxl_bitmap vcpu_bitmap;
+        libxl_vnode_info *p = &vnuma_nodes[i];
+
+        libxl_vnode_info_init(p);
+
+        /* pnode */
+        p->pnode = simulate ? 0 : i;
+
+        /* memory size */
+        p->memkb = virDomainNumaGetNodeMemorySize(numa, i);
+
+        /* vcpus */
+        bitmap = virDomainNumaGetNodeCpumask(numa, i);
+        if (bitmap == NULL) {
+            virReportError(VIR_ERR_INTERNAL_ERROR,
+                           _("vnuma sibling %zu missing vcpus set"), i);
+            goto cleanup;
+        }
+
+        if ((cpu = virBitmapNextSetBit(bitmap, -1)) < 0)
+            goto cleanup;
+
+        libxl_bitmap_init(&vcpu_bitmap);
+        if (libxl_cpu_bitmap_alloc(ctx, &vcpu_bitmap, b_info->max_vcpus)) {
+            virReportOOMError();
+            goto cleanup;
+        }
+
+        do {
+            libxl_bitmap_set(&vcpu_bitmap, cpu);
+        } while ((cpu = virBitmapNextSetBit(bitmap, cpu)) >= 0);
+
+        libxl_bitmap_copy_alloc(ctx, &p->vcpus, &vcpu_bitmap);
+        libxl_bitmap_dispose(&vcpu_bitmap);
+
+        /* vdistances */
+        if (VIR_ALLOC_N(p->distances, num_vnuma) < 0)
+            goto cleanup;
+        p->num_distances = num_vnuma;
+
+        for (j = 0; j < num_vnuma; j++)
+            p->distances[j] = virDomainNumaGetNodeDistance(numa, i, j);
+    }
+
+    b_info->vnuma_nodes = vnuma_nodes;
+    b_info->num_vnuma_nodes = num_vnuma;
+
+    ret = 0;
+
+ cleanup:
+    if (ret) {
+        for (i = 0; i < num_vnuma; i++) {
+            libxl_vnode_info *p = &vnuma_nodes[i];
+
+            VIR_FREE(p->distances);
+        }
+        VIR_FREE(vnuma_nodes);
+    }
+
+    return ret;
+}
+#endif
+
 static int
 libxlDiskSetDiscard(libxl_device_disk *x_disk, int discard)
 {
@@ -657,7 +772,7 @@ libxlMakeNetworkDiskSrcStr(virStorageSourcePtr src,
             goto cleanup;
         }
 
-        virBufferStrcat(&buf, "rbd:", src->path, NULL);
+        virBufferStrcat(&buf, "rbd:", src->volume, "/", src->path, NULL);
 
         if (username) {
             virBufferEscape(&buf, '\\', ":", ":id=%s", username);
@@ -1030,7 +1145,7 @@ libxlMakeNic(virDomainDefPtr def,
             if (VIR_STRDUP(x_nic->script, l_nic->script) < 0)
                 goto cleanup;
             if (l_nic->guestIP.nips > 0) {
-                x_nic->ip = virSocketAddrFormat(&l_nic->guestIP.ips[0]->address);
+                x_nic->ip = xenMakeIPList(&l_nic->guestIP);
                 if (!x_nic->ip)
                     goto cleanup;
             }
@@ -1046,7 +1161,7 @@ libxlMakeNic(virDomainDefPtr def,
             }
 
             if (l_nic->guestIP.nips > 0) {
-                x_nic->ip = virSocketAddrFormat(&l_nic->guestIP.ips[0]->address);
+                x_nic->ip = xenMakeIPList(&l_nic->guestIP);
                 if (!x_nic->ip)
                     goto cleanup;
             }
@@ -2183,6 +2298,11 @@ libxlBuildDomainConfig(virPortAllocatorPtr graphicsports,
 
     if (libxlMakeDomBuildInfo(def, ctx, caps, d_config) < 0)
         return -1;
+
+#ifdef LIBXL_HAVE_VNUMA
+    if (libxlMakeVnumaList(def, ctx, d_config) < 0)
+        return -1;
+#endif
 
     if (libxlMakeDiskList(def, d_config) < 0)
         return -1;

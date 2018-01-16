@@ -180,7 +180,7 @@ testQemuAgentGetFSInfo(const void *data)
     if (!test)
         return -1;
 
-    if (virAsprintf(&domain_filename, "%s/qemuagentdata/qemuagent-fsinfo.xml",
+    if (virAsprintf(&domain_filename, "%s/qemuagentdata/fsinfo.xml",
                     abs_srcdir) < 0)
         goto cleanup;
 
@@ -918,8 +918,8 @@ mymain(void)
 
     virEventRegisterDefaultImpl();
 
-#define DO_TEST(name)                                                  \
-    if (virTestRun(# name, testQemuAgent ## name, driver.xmlopt) < 0)  \
+#define DO_TEST(name) \
+    if (virTestRun(# name, testQemuAgent ## name, driver.xmlopt) < 0) \
         ret = -1
 
     DO_TEST(FSFreeze);

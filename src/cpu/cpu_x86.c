@@ -33,6 +33,7 @@
 #include "virbuffer.h"
 #include "virendian.h"
 #include "virstring.h"
+#include "virhostcpu.h"
 
 #define VIR_FROM_THIS VIR_FROM_CPU
 
@@ -60,18 +61,18 @@ struct _virCPUx86Feature {
 };
 
 
-#define KVM_FEATURE_DEF(Name, Eax_in, Eax)                          \
-    static virCPUx86CPUID Name ## _cpuid[] = {                      \
-        { .eax_in = Eax_in, .eax = Eax },                           \
+#define KVM_FEATURE_DEF(Name, Eax_in, Eax) \
+    static virCPUx86CPUID Name ## _cpuid[] = { \
+        { .eax_in = Eax_in, .eax = Eax }, \
     }
 
-#define KVM_FEATURE(Name)                                           \
-    {                                                               \
-        .name = (char *) Name,                                      \
-        .data = {                                                   \
-            .len = ARRAY_CARDINALITY(Name ## _cpuid),               \
-            .data = Name ## _cpuid                                  \
-        }                                                           \
+#define KVM_FEATURE(Name) \
+    { \
+        .name = (char *) Name, \
+        .data = { \
+            .len = ARRAY_CARDINALITY(Name ## _cpuid), \
+            .data = Name ## _cpuid \
+        } \
     }
 
 KVM_FEATURE_DEF(VIR_CPU_x86_KVM_CLOCKSOURCE,
@@ -153,8 +154,10 @@ struct _virCPUx86Map {
 };
 
 static virCPUx86MapPtr cpuMap;
-int virCPUx86MapOnceInit(void);
-VIR_ONCE_GLOBAL_INIT(virCPUx86Map);
+static unsigned int microcodeVersion;
+
+int virCPUx86DriverOnceInit(void);
+VIR_ONCE_GLOBAL_INIT(virCPUx86Driver);
 
 
 typedef enum {
@@ -1224,6 +1227,7 @@ x86ModelParse(xmlXPathContextPtr ctxt,
         VIR_FREE(name);
 
         model->vendor = ancestor->vendor;
+        model->signature = ancestor->signature;
         if (x86DataCopy(&model->data, &ancestor->data) < 0)
             goto error;
     }
@@ -1404,10 +1408,12 @@ virCPUx86LoadMap(void)
 
 
 int
-virCPUx86MapOnceInit(void)
+virCPUx86DriverOnceInit(void)
 {
     if (!(cpuMap = virCPUx86LoadMap()))
         return -1;
+
+    microcodeVersion = virHostCPUGetMicrocodeVersion();
 
     return 0;
 }
@@ -1416,7 +1422,7 @@ virCPUx86MapOnceInit(void)
 static virCPUx86MapPtr
 virCPUx86GetMap(void)
 {
-    if (virCPUx86MapInitialize() < 0)
+    if (virCPUx86DriverInitialize() < 0)
         return NULL;
 
     return cpuMap;
@@ -1497,21 +1503,21 @@ virCPUx86DataParse(xmlXPathContextPtr ctxt)
  *
  * This macro generates the error string outputs it into logs.
  */
-#define virX86CpuIncompatible(MSG, CPU_DEF)                             \
-        do {                                                            \
-            char *flagsStr = NULL;                                      \
-            if (!(flagsStr = x86FeatureNames(map, ", ", (CPU_DEF)))) {  \
-                virReportOOMError();                                    \
-                goto error;                                             \
-            }                                                           \
-            if (message &&                                              \
+#define virX86CpuIncompatible(MSG, CPU_DEF) \
+        do { \
+            char *flagsStr = NULL; \
+            if (!(flagsStr = x86FeatureNames(map, ", ", (CPU_DEF)))) { \
+                virReportOOMError(); \
+                goto error; \
+            } \
+            if (message && \
                 virAsprintf(message, "%s: %s", _(MSG), flagsStr) < 0) { \
-                VIR_FREE(flagsStr);                                     \
-                goto error;                                             \
-            }                                                           \
-            VIR_DEBUG("%s: %s", MSG, flagsStr);                         \
-            VIR_FREE(flagsStr);                                         \
-            ret = VIR_CPU_COMPARE_INCOMPATIBLE;                         \
+                VIR_FREE(flagsStr); \
+                goto error; \
+            } \
+            VIR_DEBUG("%s: %s", MSG, flagsStr); \
+            VIR_FREE(flagsStr); \
+            ret = VIR_CPU_COMPARE_INCOMPATIBLE; \
         } while (0)
 
 
@@ -1769,12 +1775,15 @@ x86DecodeUseCandidate(virCPUx86ModelPtr current,
         }
     }
 
-    if (preferred &&
-        STREQ(cpuCandidate->model, preferred))
+    if (preferred && STREQ(cpuCandidate->model, preferred)) {
+        VIR_DEBUG("%s is the preferred model", cpuCandidate->model);
         return 2;
+    }
 
-    if (!cpuCurrent)
+    if (!cpuCurrent) {
+        VIR_DEBUG("%s is better than nothing", cpuCandidate->model);
         return 1;
+    }
 
     /* Ideally we want to select a model with family/model equal to
      * family/model of the real CPU. Once we found such model, we only
@@ -1782,20 +1791,30 @@ x86DecodeUseCandidate(virCPUx86ModelPtr current,
      */
     if (signature &&
         current->signature == signature &&
-        candidate->signature != signature)
+        candidate->signature != signature) {
+        VIR_DEBUG("%s differs in signature from matching %s",
+                  cpuCandidate->model, cpuCurrent->model);
         return 0;
+    }
 
-    if (cpuCurrent->nfeatures > cpuCandidate->nfeatures)
+    if (cpuCurrent->nfeatures > cpuCandidate->nfeatures) {
+        VIR_DEBUG("%s results in shorter feature list than %s",
+                  cpuCandidate->model, cpuCurrent->model);
         return 1;
+    }
 
     /* Prefer a candidate with matching signature even though it would
      * result in longer list of features.
      */
     if (signature &&
         candidate->signature == signature &&
-        current->signature != signature)
+        current->signature != signature) {
+        VIR_DEBUG("%s provides matching signature", cpuCandidate->model);
         return 1;
+    }
 
+    VIR_DEBUG("%s does not result in shorter feature list than %s",
+              cpuCandidate->model, cpuCurrent->model);
     return 0;
 }
 
@@ -2424,6 +2443,9 @@ virCPUx86GetHost(virCPUDefPtr cpu,
     virCPUDataPtr cpuData = NULL;
     int ret = -1;
 
+    if (virCPUx86DriverInitialize() < 0)
+        goto cleanup;
+
     if (!(cpuData = virCPUDataNew(archs[0])))
         goto cleanup;
 
@@ -2432,6 +2454,7 @@ virCPUx86GetHost(virCPUDefPtr cpu,
         goto cleanup;
 
     ret = x86DecodeCPUData(cpu, cpuData, models);
+    cpu->microcodeVersion = microcodeVersion;
 
  cleanup:
     virCPUx86DataFree(cpuData);

@@ -272,7 +272,7 @@ virshNWFilterListCollect(vshControl *ctl,
     }
 
     /* there was an error during the call */
-    vshError(ctl, "%s", _("Failed to list node filters"));
+    vshError(ctl, "%s", _("Failed to list network filters"));
     goto cleanup;
 
 
@@ -414,13 +414,13 @@ cmdNWFilterEdit(vshControl *ctl, const vshCmd *cmd)
         goto cleanup;
 
 #define EDIT_GET_XML virNWFilterGetXMLDesc(nwfilter, 0)
-#define EDIT_NOT_CHANGED                                        \
-    do {                                                        \
-        vshPrintExtra(ctl, _("Network filter %s XML "           \
-                        "configuration not changed.\n"),        \
-                 virNWFilterGetName(nwfilter));                 \
-        ret = true;                                             \
-        goto edit_cleanup;                                      \
+#define EDIT_NOT_CHANGED \
+    do { \
+        vshPrintExtra(ctl, _("Network filter %s XML " \
+                        "configuration not changed.\n"), \
+                 virNWFilterGetName(nwfilter)); \
+        ret = true; \
+        goto edit_cleanup; \
     } while (0)
 #define EDIT_DEFINE \
     (nwfilter_edited = virNWFilterDefineXML(priv->conn, doc_edited))

@@ -69,14 +69,14 @@ FILE *virFileFdopen(int *fdptr, const char *mode) ATTRIBUTE_RETURN_CHECK;
 
 /* Similar VIR_FORCE_CLOSE() but ignores EBADF errors since they are expected
  * during mass close after fork(). */
-# define VIR_MASS_CLOSE(FD)                         \
-    ignore_value(virFileClose(&(FD),                \
-                 VIR_FILE_CLOSE_PRESERVE_ERRNO |    \
+# define VIR_MASS_CLOSE(FD) \
+    ignore_value(virFileClose(&(FD), \
+                 VIR_FILE_CLOSE_PRESERVE_ERRNO | \
                  VIR_FILE_CLOSE_IGNORE_EBADF))
 
-# define VIR_LOG_CLOSE(FD)                          \
-    ignore_value(virFileClose(&(FD),                \
-                 VIR_FILE_CLOSE_PRESERVE_ERRNO |    \
+# define VIR_LOG_CLOSE(FD) \
+    ignore_value(virFileClose(&(FD), \
+                 VIR_FILE_CLOSE_PRESERVE_ERRNO | \
                  VIR_FILE_CLOSE_DONT_LOG))
 
 /* Opaque type for managing a wrapper around a fd.  */
@@ -131,6 +131,8 @@ int virFileDeleteTree(const char *dir);
 
 int virFileReadHeaderFD(int fd, int maxlen, char **buf)
     ATTRIBUTE_RETURN_CHECK ATTRIBUTE_NONNULL(3);
+int virFileReadHeaderQuiet(const char *path, int maxlen, char **buf)
+    ATTRIBUTE_RETURN_CHECK ATTRIBUTE_NONNULL(1) ATTRIBUTE_NONNULL(3);
 int virFileReadLimFD(int fd, int maxlen, char **buf)
     ATTRIBUTE_RETURN_CHECK ATTRIBUTE_NONNULL(3);
 int virFileReadAll(const char *path, int maxlen, char **buf)

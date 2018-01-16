@@ -42,8 +42,8 @@
 #include "virxml.h"
 #include "conf/snapshot_conf.h"
 
-#define VIRSH_COMMON_OPT_DOMAIN_FULL                       \
-    VIRSH_COMMON_OPT_DOMAIN(N_("domain name, id or uuid")) \
+#define VIRSH_COMMON_OPT_DOMAIN_FULL(cflags) \
+    VIRSH_COMMON_OPT_DOMAIN(N_("domain name, id or uuid"), cflags)
 
 /* Helper for snapshot-create and snapshot-create-as */
 static bool
@@ -125,7 +125,7 @@ static const vshCmdInfo info_snapshot_create[] = {
 };
 
 static const vshCmdOptDef opts_snapshot_create[] = {
-    VIRSH_COMMON_OPT_DOMAIN_FULL,
+    VIRSH_COMMON_OPT_DOMAIN_FULL(0),
     {.name = "xmlfile",
      .type = VSH_OT_STRING,
      .help = N_("domain snapshot XML")
@@ -319,7 +319,7 @@ static const vshCmdInfo info_snapshot_create_as[] = {
 };
 
 static const vshCmdOptDef opts_snapshot_create_as[] = {
-    VIRSH_COMMON_OPT_DOMAIN_FULL,
+    VIRSH_COMMON_OPT_DOMAIN_FULL(0),
     {.name = "name",
      .type = VSH_OT_STRING,
      .help = N_("name of snapshot")
@@ -508,7 +508,7 @@ static const vshCmdInfo info_snapshot_edit[] = {
 };
 
 static const vshCmdOptDef opts_snapshot_edit[] = {
-    VIRSH_COMMON_OPT_DOMAIN_FULL,
+    VIRSH_COMMON_OPT_DOMAIN_FULL(0),
     {.name = "snapshotname",
      .type = VSH_OT_STRING,
      .help = N_("snapshot name")
@@ -554,16 +554,16 @@ cmdSnapshotEdit(vshControl *ctl, const vshCmd *cmd)
 
 #define EDIT_GET_XML \
     virDomainSnapshotGetXMLDesc(snapshot, getxml_flags)
-#define EDIT_NOT_CHANGED                                                     \
-    do {                                                                     \
-        /* Depending on flags, we re-edit even if XML is unchanged.  */      \
-        if (!(define_flags & VIR_DOMAIN_SNAPSHOT_CREATE_CURRENT)) {          \
-            vshPrintExtra(ctl,                                               \
+#define EDIT_NOT_CHANGED \
+    do { \
+        /* Depending on flags, we re-edit even if XML is unchanged.  */ \
+        if (!(define_flags & VIR_DOMAIN_SNAPSHOT_CREATE_CURRENT)) { \
+            vshPrintExtra(ctl, \
                           _("Snapshot %s XML configuration not changed.\n"), \
-                          name);                                             \
-            ret = true;                                                      \
-            goto edit_cleanup;                                               \
-        }                                                                    \
+                          name); \
+            ret = true; \
+            goto edit_cleanup; \
+        } \
     } while (0)
 #define EDIT_DEFINE \
     (strstr(doc, "<state>disk-snapshot</state>") ? \
@@ -620,7 +620,7 @@ static const vshCmdInfo info_snapshot_current[] = {
 };
 
 static const vshCmdOptDef opts_snapshot_current[] = {
-    VIRSH_COMMON_OPT_DOMAIN_FULL,
+    VIRSH_COMMON_OPT_DOMAIN_FULL(0),
     {.name = "name",
      .type = VSH_OT_BOOL,
      .help = N_("list the name, rather than the full xml")
@@ -851,7 +851,7 @@ static const vshCmdInfo info_snapshot_info[] = {
 };
 
 static const vshCmdOptDef opts_snapshot_info[] = {
-    VIRSH_COMMON_OPT_DOMAIN_FULL,
+    VIRSH_COMMON_OPT_DOMAIN_FULL(0),
     {.name = "snapshotname",
      .type = VSH_OT_STRING,
      .help = N_("snapshot name")
@@ -1401,7 +1401,7 @@ static const vshCmdInfo info_snapshot_list[] = {
 };
 
 static const vshCmdOptDef opts_snapshot_list[] = {
-    VIRSH_COMMON_OPT_DOMAIN_FULL,
+    VIRSH_COMMON_OPT_DOMAIN_FULL(0),
     {.name = "parent",
      .type = VSH_OT_BOOL,
      .help = N_("add a column showing parent snapshot")
@@ -1501,17 +1501,17 @@ cmdSnapshotList(vshControl *ctl, const vshCmd *cmd)
     VSH_EXCLUSIVE_OPTIONS_VAR(roots, from);
     VSH_EXCLUSIVE_OPTIONS_VAR(roots, current);
 
-#define FILTER(option, flag)                                          \
-    do {                                                              \
-        if (vshCommandOptBool(cmd, option)) {                         \
-            if (tree) {                                               \
-                vshError(ctl,                                         \
+#define FILTER(option, flag) \
+    do { \
+        if (vshCommandOptBool(cmd, option)) { \
+            if (tree) { \
+                vshError(ctl, \
                          _("--%s and --tree are mutually exclusive"), \
-                         option);                                     \
-                return false;                                         \
-            }                                                         \
-            flags |= VIR_DOMAIN_SNAPSHOT_LIST_ ## flag;               \
-        }                                                             \
+                         option); \
+                return false; \
+            } \
+            flags |= VIR_DOMAIN_SNAPSHOT_LIST_ ## flag; \
+        } \
     } while (0)
 
     FILTER("leaves", LEAVES);
@@ -1657,7 +1657,7 @@ static const vshCmdInfo info_snapshot_dumpxml[] = {
 };
 
 static const vshCmdOptDef opts_snapshot_dumpxml[] = {
-    VIRSH_COMMON_OPT_DOMAIN_FULL,
+    VIRSH_COMMON_OPT_DOMAIN_FULL(0),
     {.name = "snapshotname",
      .type = VSH_OT_DATA,
      .flags = VSH_OFLAG_REQ,
@@ -1720,7 +1720,7 @@ static const vshCmdInfo info_snapshot_parent[] = {
 };
 
 static const vshCmdOptDef opts_snapshot_parent[] = {
-    VIRSH_COMMON_OPT_DOMAIN_FULL,
+    VIRSH_COMMON_OPT_DOMAIN_FULL(0),
     {.name = "snapshotname",
      .type = VSH_OT_STRING,
      .help = N_("find parent of snapshot name")
@@ -1779,7 +1779,7 @@ static const vshCmdInfo info_snapshot_revert[] = {
 };
 
 static const vshCmdOptDef opts_snapshot_revert[] = {
-    VIRSH_COMMON_OPT_DOMAIN_FULL,
+    VIRSH_COMMON_OPT_DOMAIN_FULL(0),
     {.name = "snapshotname",
      .type = VSH_OT_STRING,
      .help = N_("snapshot name")
@@ -1863,7 +1863,7 @@ static const vshCmdInfo info_snapshot_delete[] = {
 };
 
 static const vshCmdOptDef opts_snapshot_delete[] = {
-    VIRSH_COMMON_OPT_DOMAIN_FULL,
+    VIRSH_COMMON_OPT_DOMAIN_FULL(0),
     {.name = "snapshotname",
      .type = VSH_OT_STRING,
      .help = N_("snapshot name")
