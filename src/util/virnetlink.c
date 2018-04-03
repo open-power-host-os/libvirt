@@ -278,14 +278,14 @@ virNetlinkSendRequest(struct nl_msg *nl_msg, uint32_t src_pid,
 
 /**
  * virNetlinkCommand:
- * @nlmsg: pointer to netlink message
- * @respbuf: pointer to pointer where response buffer will be allocated
+ * @nl_msg:     pointer to netlink message
+ * @resp:       pointer to pointer where response buffer will be allocated
  * @respbuflen: pointer to integer holding the size of the response buffer
- *      on return of the function.
- * @src_pid: the pid of the process to send a message
- * @dst_pid: the pid of the process to talk to, i.e., pid = 0 for kernel
- * @protocol: netlink protocol
- * @groups: the group identifier
+ *              on return of the function.
+ * @src_pid:    the pid of the process to send a message
+ * @dst_pid:    the pid of the process to talk to, i.e., pid = 0 for kernel
+ * @protocol:   netlink protocol
+ * @groups:     the group identifier
  *
  * Send the given message to the netlink layer and receive response.
  * Returns 0 on success, -1 on error. In case of error, no response
@@ -373,11 +373,13 @@ virNetlinkDumpCommand(struct nl_msg *nl_msg,
             if (callback(msg, opaque) < 0)
                 goto cleanup;
         }
+        VIR_FREE(resp);
     }
 
     ret = 0;
 
  cleanup:
+    VIR_FREE(resp);
     virNetlinkFree(nlhandle);
     return ret;
 }
@@ -387,9 +389,9 @@ virNetlinkDumpCommand(struct nl_msg *nl_msg,
  *
  * @ifname:  The name of the interface; only use if ifindex <= 0
  * @ifindex: The interface index; may be <= 0 if ifname is given
- * @data:    Gets a pointer to the raw data from netlink.
+ * @nlData:  Gets a pointer to the raw data from netlink.
              MUST BE FREED BY CALLER!
- * @nlattr:  Pointer to a pointer of netlink attributes that will contain
+ * @tb:      Pointer to a pointer of netlink attributes that will contain
  *           the results
  * @src_pid: pid used for nl_pid of the local end of the netlink message
  *           (0 == "use getpid()")
@@ -505,7 +507,7 @@ virNetlinkDumpLink(const char *ifname, int ifindex,
 /**
  * virNetlinkDelLink:
  *
- * @ifname: Name of the link
+ * @ifname:   Name of the link
  * @fallback: pointer to an alternate function that will
  *            be called to perform the delete if RTM_DELLINK fails
  *            with EOPNOTSUPP (any other error will simply be treated
@@ -590,6 +592,88 @@ virNetlinkDelLink(const char *ifname, virNetlinkDelLinkFallback fallback)
     goto cleanup;
 }
 
+/**
+ * virNetlinkGetNeighbor:
+ *
+ * @nlData:  Gets a pointer to the raw data from netlink.
+             MUST BE FREED BY CALLER!
+ * @src_pid: pid used for nl_pid of the local end of the netlink message
+ *           (0 == "use getpid()")
+ * @dst_pid: pid of destination nl_pid if the kernel
+ *           is not the target of the netlink message but it is to be
+ *           sent to another process (0 if sending to the kernel)
+ *
+ * Get neighbor table entry from netlink.
+ *
+ * Returns 0 on success, -1 on fatal error.
+ */
+int
+virNetlinkGetNeighbor(void **nlData, uint32_t src_pid, uint32_t dst_pid)
+{
+    int rc = -1;
+    struct nlmsghdr *resp = NULL;
+    struct nlmsgerr *err;
+    struct ndmsg ndinfo = {
+        .ndm_family = AF_UNSPEC,
+    };
+    unsigned int recvbuflen;
+    struct nl_msg *nl_msg;
+
+    nl_msg = nlmsg_alloc_simple(RTM_GETNEIGH, NLM_F_DUMP | NLM_F_REQUEST);
+    if (!nl_msg) {
+        virReportOOMError();
+        return -1;
+    }
+
+    if (nlmsg_append(nl_msg, &ndinfo, sizeof(ndinfo), NLMSG_ALIGNTO) < 0)
+        goto buffer_too_small;
+
+
+    if (virNetlinkCommand(nl_msg, &resp, &recvbuflen,
+                          src_pid, dst_pid, NETLINK_ROUTE, 0) < 0)
+        goto cleanup;
+
+    if (recvbuflen < NLMSG_LENGTH(0) || resp == NULL)
+        goto malformed_resp;
+
+    switch (resp->nlmsg_type) {
+    case NLMSG_ERROR:
+        err = (struct nlmsgerr *)NLMSG_DATA(resp);
+        if (resp->nlmsg_len < NLMSG_LENGTH(sizeof(*err)))
+            goto malformed_resp;
+
+        if (err->error) {
+            virReportSystemError(-err->error,
+                                 "%s", _("error dumping"));
+            goto cleanup;
+        }
+        break;
+
+    case RTM_NEWNEIGH:
+        break;
+
+    default:
+        goto malformed_resp;
+    }
+    rc = recvbuflen;
+
+ cleanup:
+    nlmsg_free(nl_msg);
+    if (rc < 0)
+       VIR_FREE(resp);
+    *nlData = resp;
+    return rc;
+
+ malformed_resp:
+    virReportError(VIR_ERR_INTERNAL_ERROR, "%s",
+                   _("malformed netlink response message"));
+    goto cleanup;
+
+ buffer_too_small:
+    virReportError(VIR_ERR_INTERNAL_ERROR, "%s",
+                   _("allocated netlink buffer is too small"));
+    goto cleanup;
+}
 
 int
 virNetlinkGetErrorCode(struct nlmsghdr *resp, unsigned int recvbuflen)
@@ -648,7 +732,7 @@ virNetlinkEventServerUnlock(virNetlinkEventSrvPrivatePtr driver)
 /**
  * virNetlinkEventRemoveClientPrimitive:
  *
- * @i: index of the client to remove from the table
+ * @i:        index of the client to remove from the table
  * @protocol: netlink protocol
  *
  * This static function does the low level removal of a client from
@@ -837,7 +921,8 @@ int virNetlinkEventServiceLocalPid(unsigned int protocol)
  * This registers a netlink socket with the event interface.
  *
  * @protocol: netlink protocol
- * @groups: broadcast groups to join in
+ * @groups:   broadcast groups to join in
+ *
  * Returns -1 if the monitor cannot be registered, 0 upon success
  */
 int
@@ -925,9 +1010,9 @@ virNetlinkEventServiceStart(unsigned int protocol, unsigned int groups)
  *
  * @handleCB: callback to invoke when an event occurs
  * @removeCB: callback to invoke when removing a client
- * @opaque: user data to pass to callback
- * @macaddr: macaddr to store with the data. Used to identify callers.
- *           May be null.
+ * @opaque:   user data to pass to callback
+ * @macaddr:  macaddr to store with the data. Used to identify callers.
+ *            May be null.
  * @protocol: netlink protocol
  *
  * register a callback for handling of netlink messages. The
@@ -1003,8 +1088,8 @@ virNetlinkEventAddClient(virNetlinkEventHandleCallback handleCB,
 /**
  * virNetlinkEventRemoveClient:
  *
- * @watch: watch whose handle to remove
- * @macaddr: macaddr whose handle to remove
+ * @watch:    watch whose handle to remove
+ * @macaddr:  macaddr whose handle to remove
  * @protocol: netlink protocol
  *
  * Unregister a callback from a netlink monitor.
@@ -1123,6 +1208,17 @@ virNetlinkDelLink(const char *ifname ATTRIBUTE_UNUSED,
     virReportError(VIR_ERR_INTERNAL_ERROR, "%s", _(unsupported));
     return -1;
 }
+
+
+int
+virNetlinkGetNeighbor(void **nlData ATTRIBUTE_UNUSED,
+                      uint32_t src_pid ATTRIBUTE_UNUSED,
+                      uint32_t dst_pid ATTRIBUTE_UNUSED)
+{
+    virReportError(VIR_ERR_INTERNAL_ERROR, "%s", _(unsupported));
+    return -1;
+}
+
 
 /**
  * stopNetlinkEventServer: stop the monitor to receive netlink

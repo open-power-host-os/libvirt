@@ -143,7 +143,7 @@ VIR_ONCE_GLOBAL_INIT(virNetServerClient)
 
 static void virNetServerClientDispatchEvent(virNetSocketPtr sock, int events, void *opaque);
 static void virNetServerClientUpdateEvent(virNetServerClientPtr client);
-static void virNetServerClientDispatchRead(virNetServerClientPtr client);
+static virNetMessagePtr virNetServerClientDispatchRead(virNetServerClientPtr client);
 static int virNetServerClientSendMessageLocked(virNetServerClientPtr client,
                                                virNetMessagePtr msg);
 
@@ -340,18 +340,40 @@ virNetServerClientCheckAccess(virNetServerClientPtr client)
 }
 #endif
 
+static void virNetServerClientDispatchMessage(virNetServerClientPtr client,
+                                              virNetMessagePtr msg)
+{
+    virObjectLock(client);
+    if (!client->dispatchFunc) {
+        virNetMessageFree(msg);
+        client->wantClose = true;
+        virObjectUnlock(client);
+    } else {
+        virObjectUnlock(client);
+        /* Accessing 'client' is safe, because virNetServerClientSetDispatcher
+         * only permits setting 'dispatchFunc' once, so if non-NULL, it will
+         * never change again
+         */
+        client->dispatchFunc(client, msg, client->dispatchOpaque);
+    }
+}
+
 
 static void virNetServerClientSockTimerFunc(int timer,
                                             void *opaque)
 {
     virNetServerClientPtr client = opaque;
+    virNetMessagePtr msg = NULL;
     virObjectLock(client);
     virEventUpdateTimeout(timer, -1);
     /* Although client->rx != NULL when this timer is enabled, it might have
      * changed since the client was unlocked in the meantime. */
     if (client->rx)
-        virNetServerClientDispatchRead(client);
+        msg = virNetServerClientDispatchRead(client);
     virObjectUnlock(client);
+
+    if (msg)
+        virNetServerClientDispatchMessage(client, msg);
 }
 
 
@@ -466,25 +488,23 @@ virNetServerClientPtr virNetServerClientNew(unsigned long long id,
                                                  now)))
         return NULL;
 
-    if (privNew) {
-        if (!(client->privateData = privNew(client, privOpaque))) {
-            virObjectUnref(client);
-            return NULL;
-        }
-        client->privateDataFreeFunc = privFree;
-        client->privateDataPreExecRestart = privPreExecRestart;
+    if (!(client->privateData = privNew(client, privOpaque))) {
+        virObjectUnref(client);
+        return NULL;
     }
+    client->privateDataFreeFunc = privFree;
+    client->privateDataPreExecRestart = privPreExecRestart;
 
     return client;
 }
 
 
-virNetServerClientPtr virNetServerClientNewPostExecRestart(virJSONValuePtr object,
+virNetServerClientPtr virNetServerClientNewPostExecRestart(virNetServerPtr srv,
+                                                           virJSONValuePtr object,
                                                            virNetServerClientPrivNewPostExecRestart privNew,
                                                            virNetServerClientPrivPreExecRestart privPreExecRestart,
                                                            virFreeCallback privFree,
-                                                           void *privOpaque,
-                                                           void *opaque)
+                                                           void *privOpaque)
 {
     virJSONValuePtr child;
     virNetServerClientPtr client = NULL;
@@ -540,12 +560,12 @@ virNetServerClientPtr virNetServerClientNewPostExecRestart(virJSONValuePtr objec
 
     if (!virJSONValueObjectHasKey(object, "id")) {
         /* no ID found in, a new one must be generated */
-        id = virNetServerNextClientID((virNetServerPtr) opaque);
+        id = virNetServerNextClientID(srv);
     } else {
         if (virJSONValueObjectGetNumberUlong(object, "id", &id) < 0) {
-        virReportError(VIR_ERR_INTERNAL_ERROR, "%s",
-                       _("Malformed id field in JSON state document"));
-        return NULL;
+            virReportError(VIR_ERR_INTERNAL_ERROR, "%s",
+                           _("Malformed id field in JSON state document"));
+            return NULL;
         }
     }
 
@@ -580,17 +600,17 @@ virNetServerClientPtr virNetServerClientNewPostExecRestart(virJSONValuePtr objec
     }
     virObjectUnref(sock);
 
-    if (privNew) {
-        if (!(child = virJSONValueObjectGet(object, "privateData"))) {
-            virReportError(VIR_ERR_INTERNAL_ERROR, "%s",
-                           _("Missing privateData field in JSON state document"));
-            goto error;
-        }
-        if (!(client->privateData = privNew(client, child, privOpaque)))
-            goto error;
-        client->privateDataFreeFunc = privFree;
-        client->privateDataPreExecRestart = privPreExecRestart;
+    if (!(child = virJSONValueObjectGet(object, "privateData"))) {
+        virReportError(VIR_ERR_INTERNAL_ERROR, "%s",
+                       _("Missing privateData field in JSON state document"));
+        goto error;
     }
+
+    if (!(client->privateData = privNew(client, child, privOpaque)))
+        goto error;
+
+    client->privateDataFreeFunc = privFree;
+    client->privateDataPreExecRestart = privPreExecRestart;
 
 
     return client;
@@ -637,14 +657,12 @@ virJSONValuePtr virNetServerClientPreExecRestart(virNetServerClientPtr client)
         goto error;
     }
 
-    if (client->privateData && client->privateDataPreExecRestart) {
-        if (!(child = client->privateDataPreExecRestart(client, client->privateData)))
-            goto error;
+    if (!(child = client->privateDataPreExecRestart(client, client->privateData)))
+        goto error;
 
-        if (virJSONValueObjectAppend(object, "privateData", child) < 0) {
-            virJSONValueFree(child);
-            goto error;
-        }
+    if (virJSONValueObjectAppend(object, "privateData", child) < 0) {
+        virJSONValueFree(child);
+        goto error;
     }
 
     virObjectUnlock(client);
@@ -954,8 +972,13 @@ void virNetServerClientSetDispatcher(virNetServerClientPtr client,
                                      void *opaque)
 {
     virObjectLock(client);
-    client->dispatchFunc = func;
-    client->dispatchOpaque = opaque;
+    /* Only set dispatcher if not already set, to avoid race
+     * with dispatch code that runs without locks held
+     */
+    if (!client->dispatchFunc) {
+        client->dispatchFunc = func;
+        client->dispatchOpaque = opaque;
+    }
     virObjectUnlock(client);
 }
 
@@ -989,8 +1012,7 @@ void virNetServerClientDispose(void *obj)
     PROBE(RPC_SERVER_CLIENT_DISPOSE,
           "client=%p", client);
 
-    if (client->privateData &&
-        client->privateDataFreeFunc)
+    if (client->privateData)
         client->privateDataFreeFunc(client->privateData);
 
     virObjectUnref(client->identity);
@@ -1201,26 +1223,32 @@ static ssize_t virNetServerClientRead(virNetServerClientPtr client)
 
 
 /*
- * Read data until we get a complete message to process
+ * Read data until we get a complete message to process.
+ * If a complete message is available, it will be returned
+ * from this method, for dispatch by the caller.
+ *
+ * Returns a complete message for dispatch, or NULL if none is
+ * yet available, or an error occurred. On error, the wantClose
+ * flag will be set.
  */
-static void virNetServerClientDispatchRead(virNetServerClientPtr client)
+static virNetMessagePtr virNetServerClientDispatchRead(virNetServerClientPtr client)
 {
  readmore:
     if (client->rx->nfds == 0) {
         if (virNetServerClientRead(client) < 0) {
             client->wantClose = true;
-            return; /* Error */
+            return NULL; /* Error */
         }
     }
 
     if (client->rx->bufferOffset < client->rx->bufferLength)
-        return; /* Still not read enough */
+        return NULL; /* Still not read enough */
 
     /* Either done with length word header */
     if (client->rx->bufferLength == VIR_NET_MESSAGE_LEN_MAX) {
         if (virNetMessageDecodeLength(client->rx) < 0) {
             client->wantClose = true;
-            return;
+            return NULL;
         }
 
         virNetServerClientUpdateEvent(client);
@@ -1241,7 +1269,7 @@ static void virNetServerClientDispatchRead(virNetServerClientPtr client)
             virNetMessageQueueServe(&client->rx);
             virNetMessageFree(msg);
             client->wantClose = true;
-            return;
+            return NULL;
         }
 
         /* Now figure out if we need to read more data to get some
@@ -1251,7 +1279,7 @@ static void virNetServerClientDispatchRead(virNetServerClientPtr client)
                 virNetMessageQueueServe(&client->rx);
                 virNetMessageFree(msg);
                 client->wantClose = true;
-                return; /* Error */
+                return NULL; /* Error */
             }
 
             /* Try getting the file descriptors (may fail if blocking) */
@@ -1261,7 +1289,7 @@ static void virNetServerClientDispatchRead(virNetServerClientPtr client)
                     virNetMessageQueueServe(&client->rx);
                     virNetMessageFree(msg);
                     client->wantClose = true;
-                    return;
+                    return NULL;
                 }
                 if (rv == 0) /* Blocking */
                     break;
@@ -1275,7 +1303,7 @@ static void virNetServerClientDispatchRead(virNetServerClientPtr client)
                  * again next time we run this method
                  */
                 client->rx->bufferOffset = client->rx->bufferLength;
-                return;
+                return NULL;
             }
         }
 
@@ -1318,18 +1346,6 @@ static void virNetServerClientDispatchRead(virNetServerClientPtr client)
             }
         }
 
-        /* Send off to for normal dispatch to workers */
-        if (msg) {
-            virObjectRef(client);
-            if (!client->dispatchFunc ||
-                client->dispatchFunc(client, msg, client->dispatchOpaque) < 0) {
-                virNetMessageFree(msg);
-                client->wantClose = true;
-                virObjectUnref(client);
-                return;
-            }
-        }
-
         /* Possibly need to create another receive buffer */
         if (client->nrequests < client->nrequests_max) {
             if (!(client->rx = virNetMessageNew(true))) {
@@ -1345,6 +1361,8 @@ static void virNetServerClientDispatchRead(virNetServerClientPtr client)
             }
         }
         virNetServerClientUpdateEvent(client);
+
+        return msg;
     }
 }
 
@@ -1489,6 +1507,7 @@ static void
 virNetServerClientDispatchEvent(virNetSocketPtr sock, int events, void *opaque)
 {
     virNetServerClientPtr client = opaque;
+    virNetMessagePtr msg = NULL;
 
     virObjectLock(client);
 
@@ -1511,7 +1530,7 @@ virNetServerClientDispatchEvent(virNetSocketPtr sock, int events, void *opaque)
                 virNetServerClientDispatchWrite(client);
             if (events & VIR_EVENT_HANDLE_READABLE &&
                 client->rx)
-                virNetServerClientDispatchRead(client);
+                msg = virNetServerClientDispatchRead(client);
 #if WITH_GNUTLS
         }
 #endif
@@ -1524,6 +1543,9 @@ virNetServerClientDispatchEvent(virNetSocketPtr sock, int events, void *opaque)
         client->wantClose = true;
 
     virObjectUnlock(client);
+
+    if (msg)
+        virNetServerClientDispatchMessage(client, msg);
 }
 
 

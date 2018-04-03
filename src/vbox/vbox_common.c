@@ -410,11 +410,16 @@ vboxSetStorageController(virDomainControllerDefPtr controller,
         case VIR_DOMAIN_CONTROLLER_MODEL_SCSI_IBMVSCSI:
         case VIR_DOMAIN_CONTROLLER_MODEL_SCSI_VIRTIO_SCSI:
         case VIR_DOMAIN_CONTROLLER_MODEL_SCSI_LSISAS1078:
-        case VIR_DOMAIN_CONTROLLER_MODEL_SCSI_LAST:
             virReportError(VIR_ERR_CONFIG_UNSUPPORTED,
                            _("The vbox driver does not support %s SCSI "
                              "controller model"),
                            virDomainControllerModelSCSITypeToString(controller->model));
+            goto cleanup;
+        case VIR_DOMAIN_CONTROLLER_MODEL_SCSI_DEFAULT:
+        case VIR_DOMAIN_CONTROLLER_MODEL_SCSI_LAST:
+            virReportError(VIR_ERR_INTERNAL_ERROR,
+                           _("Unexpected SCSI controller model %d"),
+                           controller->model);
             goto cleanup;
         }
     /* libvirt ide model => vbox ide model */
@@ -433,10 +438,10 @@ vboxSetStorageController(virDomainControllerDefPtr controller,
 
             break;
         case VIR_DOMAIN_CONTROLLER_MODEL_IDE_LAST:
+        case VIR_DOMAIN_CONTROLLER_MODEL_IDE_DEFAULT:
             virReportError(VIR_ERR_CONFIG_UNSUPPORTED,
-                           _("The vbox driver does not support %s IDE "
-                             "controller model"),
-                             virDomainControllerModelIDETypeToString(controller->model));
+                           _("Unexpected IDE controller model %d"),
+                           controller->model);
             goto cleanup;
         }
     }
@@ -1047,10 +1052,11 @@ static int
 vboxAttachDrives(virDomainDefPtr def, vboxDriverPtr data, IMachine *machine)
 {
     size_t i;
-    int type, ret = 0, model = -1;
+    int type, ret = 0;
     const char *src = NULL;
     nsresult rc = 0;
     virDomainDiskDefPtr disk = NULL;
+    virDomainControllerDefPtr cont;
     PRUnichar *storageCtlName = NULL;
     char *controllerName = NULL;
     IMedium *medium = NULL;
@@ -1126,9 +1132,8 @@ vboxAttachDrives(virDomainDefPtr def, vboxDriverPtr data, IMachine *machine)
         case VIR_DOMAIN_DISK_BUS_SCSI:
             VBOX_UTF8_TO_UTF16(VBOX_CONTROLLER_SCSI_NAME, &storageCtlName);
 
-            model = virDomainDeviceFindControllerModel(def, &disk->info,
-                                                       VIR_DOMAIN_CONTROLLER_TYPE_SCSI);
-            if (model == VIR_DOMAIN_CONTROLLER_MODEL_SCSI_LSISAS1068) {
+            cont = virDomainDeviceFindSCSIController(def, &disk->info);
+            if (cont && cont->model == VIR_DOMAIN_CONTROLLER_MODEL_SCSI_LSISAS1068) {
                 VBOX_UTF16_FREE(storageCtlName);
                 VBOX_UTF8_TO_UTF16(VBOX_CONTROLLER_SAS_NAME, &storageCtlName);
             }
@@ -3622,23 +3627,26 @@ vboxDumpDisplay(virDomainDefPtr def, vboxDriverPtr data, IMachine *machine)
     return ret;
 }
 
-static void
+static int
 vboxDumpSharedFolders(virDomainDefPtr def, vboxDriverPtr data, IMachine *machine)
 {
-    /* shared folders */
     vboxArray sharedFolders = VBOX_ARRAY_INITIALIZER;
     size_t i = 0;
+    int ret = -1;
 
     def->nfss = 0;
 
     gVBoxAPI.UArray.vboxArrayGet(&sharedFolders, machine,
                                  gVBoxAPI.UArray.handleMachineGetSharedFolders(machine));
 
-    if (sharedFolders.count <= 0)
-        goto sharedFoldersCleanup;
+    if (sharedFolders.count <= 0) {
+        if (sharedFolders.count == 0)
+            ret = 0;
+        goto cleanup;
+    }
 
     if (VIR_ALLOC_N(def->fss, sharedFolders.count) < 0)
-        goto sharedFoldersCleanup;
+        goto cleanup;
 
     for (i = 0; i < sharedFolders.count; i++) {
         ISharedFolder *sharedFolder = sharedFolders.items[i];
@@ -3649,7 +3657,7 @@ vboxDumpSharedFolders(virDomainDefPtr def, vboxDriverPtr data, IMachine *machine
         PRBool writable = PR_FALSE;
 
         if (VIR_ALLOC(def->fss[i]) < 0)
-            goto sharedFoldersCleanup;
+            goto cleanup;
 
         def->fss[i]->type = VIR_DOMAIN_FS_TYPE_MOUNT;
 
@@ -3658,7 +3666,7 @@ vboxDumpSharedFolders(virDomainDefPtr def, vboxDriverPtr data, IMachine *machine
         if (VIR_STRDUP(def->fss[i]->src->path, hostPath) < 0) {
             VBOX_UTF8_FREE(hostPath);
             VBOX_UTF16_FREE(hostPathUtf16);
-            goto sharedFoldersCleanup;
+            goto cleanup;
         }
         VBOX_UTF8_FREE(hostPath);
         VBOX_UTF16_FREE(hostPathUtf16);
@@ -3668,7 +3676,7 @@ vboxDumpSharedFolders(virDomainDefPtr def, vboxDriverPtr data, IMachine *machine
         if (VIR_STRDUP(def->fss[i]->dst, name) < 0) {
             VBOX_UTF8_FREE(name);
             VBOX_UTF16_FREE(nameUtf16);
-            goto sharedFoldersCleanup;
+            goto cleanup;
         }
         VBOX_UTF8_FREE(name);
         VBOX_UTF16_FREE(nameUtf16);
@@ -3679,147 +3687,139 @@ vboxDumpSharedFolders(virDomainDefPtr def, vboxDriverPtr data, IMachine *machine
         ++def->nfss;
     }
 
- sharedFoldersCleanup:
+    ret = 0;
+
+ cleanup:
     gVBoxAPI.UArray.vboxArrayRelease(&sharedFolders);
+    return ret;
 }
 
-static void
-vboxDumpNetwork(virDomainDefPtr def, vboxDriverPtr data, IMachine *machine, PRUint32 networkAdapterCount)
+static virDomainNetDefPtr
+vboxDumpNetwork(vboxDriverPtr data, INetworkAdapter *adapter)
 {
-    PRUint32 netAdpIncCnt = 0;
+    PRUint32 attachmentType = NetworkAttachmentType_Null;
+    PRUint32 adapterType = NetworkAdapterType_Null;
+    const char *model = NULL;
+    PRUnichar *utf16 = NULL;
+    char *utf8 = NULL;
+    virDomainNetDefPtr net = NULL;
+
+    if (VIR_ALLOC(net) < 0)
+        return NULL;
+
+    gVBoxAPI.UINetworkAdapter.GetAttachmentType(adapter, &attachmentType);
+
+    switch (attachmentType) {
+    case NetworkAttachmentType_NAT:
+        net->type = VIR_DOMAIN_NET_TYPE_USER;
+        break;
+
+    case NetworkAttachmentType_Bridged:
+        net->type = VIR_DOMAIN_NET_TYPE_BRIDGE;
+
+        gVBoxAPI.UINetworkAdapter.GetBridgedInterface(adapter, &utf16);
+
+        VBOX_UTF16_TO_UTF8(utf16, &utf8);
+        VIR_STEAL_PTR(net->data.bridge.brname, utf8);
+        VBOX_UTF16_FREE(utf16);
+        break;
+
+    case NetworkAttachmentType_Internal:
+        net->type = VIR_DOMAIN_NET_TYPE_INTERNAL;
+
+        gVBoxAPI.UINetworkAdapter.GetInternalNetwork(adapter, &utf16);
+
+        VBOX_UTF16_TO_UTF8(utf16, &utf8);
+        VIR_STEAL_PTR(net->data.internal.name, utf8);
+        VBOX_UTF16_FREE(utf16);
+        break;
+
+    case NetworkAttachmentType_HostOnly:
+        net->type = VIR_DOMAIN_NET_TYPE_NETWORK;
+
+        gVBoxAPI.UINetworkAdapter.GetHostOnlyInterface(adapter, &utf16);
+
+        VBOX_UTF16_TO_UTF8(utf16, &utf8);
+        VIR_STEAL_PTR(net->data.network.name, utf8);
+        VBOX_UTF16_FREE(utf16);
+        break;
+
+    default:
+        /* default to user type i.e. NAT in VirtualBox if this
+         * dump is ever used to create a machine.
+         */
+        net->type = VIR_DOMAIN_NET_TYPE_USER;
+    }
+
+    gVBoxAPI.UINetworkAdapter.GetAdapterType(adapter, &adapterType);
+    switch (adapterType) {
+    case NetworkAdapterType_Am79C970A:
+        model = "Am79C970A";
+        break;
+    case NetworkAdapterType_Am79C973:
+        model = "Am79C973";
+        break;
+    case NetworkAdapterType_I82540EM:
+        model = "82540EM";
+        break;
+    case NetworkAdapterType_I82545EM:
+        model = "82545EM";
+        break;
+    case NetworkAdapterType_I82543GC:
+        model = "82543GC";
+        break;
+    case NetworkAdapterType_Virtio:
+        /* Only vbox 3.1 and later support NetworkAdapterType_Virto */
+        if (gVBoxAPI.APIVersion >= 3000051)
+            model = "virtio";
+        break;
+    }
+    if (VIR_STRDUP(net->model, model) < 0)
+        goto error;
+
+    gVBoxAPI.UINetworkAdapter.GetMACAddress(adapter, &utf16);
+    VBOX_UTF16_TO_UTF8(utf16, &utf8);
+    VBOX_UTF16_FREE(utf16);
+
+    if (virMacAddrParseHex(utf8, &net->mac) < 0) {
+        VBOX_UTF8_FREE(utf8);
+        goto error;
+    }
+
+    VBOX_UTF8_FREE(utf8);
+    return net;
+
+ error:
+    virDomainNetDefFree(net);
+    return NULL;
+}
+
+static int
+vboxDumpNetworks(virDomainDefPtr def, vboxDriverPtr data, IMachine *machine, PRUint32 networkAdapterCount)
+{
     size_t i = 0;
-    /* dump network cards if present */
-    def->nnets = 0;
-    /* Get which network cards are enabled */
+
     for (i = 0; i < networkAdapterCount; i++) {
         INetworkAdapter *adapter = NULL;
+        virDomainNetDefPtr net = NULL;
+        PRBool enabled = PR_FALSE;
 
         gVBoxAPI.UIMachine.GetNetworkAdapter(machine, i, &adapter);
-        if (adapter) {
-            PRBool enabled = PR_FALSE;
-
+        if (adapter)
             gVBoxAPI.UINetworkAdapter.GetEnabled(adapter, &enabled);
-            if (enabled)
-                def->nnets++;
 
-            VBOX_RELEASE(adapter);
-        }
-    }
-
-    /* Allocate memory for the networkcards which are enabled */
-    if ((def->nnets > 0) && (VIR_ALLOC_N(def->nets, def->nnets) >= 0)) {
-        for (i = 0; i < def->nnets; i++)
-            ignore_value(VIR_ALLOC(def->nets[i]));
-    }
-
-    /* Now get the details about the network cards here */
-    for (i = 0; netAdpIncCnt < def->nnets && i < networkAdapterCount; i++) {
-        INetworkAdapter *adapter = NULL;
-
-        gVBoxAPI.UIMachine.GetNetworkAdapter(machine, i, &adapter);
-        if (adapter) {
-            PRBool enabled = PR_FALSE;
-
-            gVBoxAPI.UINetworkAdapter.GetEnabled(adapter, &enabled);
-            if (enabled) {
-                PRUint32 attachmentType = NetworkAttachmentType_Null;
-                PRUint32 adapterType = NetworkAdapterType_Null;
-                PRUnichar *MACAddressUtf16 = NULL;
-                char *MACAddress = NULL;
-                char macaddr[VIR_MAC_STRING_BUFLEN] = {0};
-
-                gVBoxAPI.UINetworkAdapter.GetAttachmentType(adapter, &attachmentType);
-                if (attachmentType == NetworkAttachmentType_NAT) {
-
-                    def->nets[netAdpIncCnt]->type = VIR_DOMAIN_NET_TYPE_USER;
-
-                } else if (attachmentType == NetworkAttachmentType_Bridged) {
-                    PRUnichar *hostIntUtf16 = NULL;
-                    char *hostInt = NULL;
-
-                    def->nets[netAdpIncCnt]->type = VIR_DOMAIN_NET_TYPE_BRIDGE;
-
-                    gVBoxAPI.UINetworkAdapter.GetBridgedInterface(adapter, &hostIntUtf16);
-
-                    VBOX_UTF16_TO_UTF8(hostIntUtf16, &hostInt);
-                    ignore_value(VIR_STRDUP(def->nets[netAdpIncCnt]->data.bridge.brname, hostInt));
-
-                    VBOX_UTF8_FREE(hostInt);
-                    VBOX_UTF16_FREE(hostIntUtf16);
-
-                } else if (attachmentType == NetworkAttachmentType_Internal) {
-                    PRUnichar *intNetUtf16 = NULL;
-                    char *intNet = NULL;
-
-                    def->nets[netAdpIncCnt]->type = VIR_DOMAIN_NET_TYPE_INTERNAL;
-
-                    gVBoxAPI.UINetworkAdapter.GetInternalNetwork(adapter, &intNetUtf16);
-
-                    VBOX_UTF16_TO_UTF8(intNetUtf16, &intNet);
-                    ignore_value(VIR_STRDUP(def->nets[netAdpIncCnt]->data.internal.name, intNet));
-
-                    VBOX_UTF8_FREE(intNet);
-                    VBOX_UTF16_FREE(intNetUtf16);
-
-                } else if (attachmentType == NetworkAttachmentType_HostOnly) {
-                    PRUnichar *hostIntUtf16 = NULL;
-                    char *hostInt = NULL;
-
-                    def->nets[netAdpIncCnt]->type = VIR_DOMAIN_NET_TYPE_NETWORK;
-
-                    gVBoxAPI.UINetworkAdapter.GetHostOnlyInterface(adapter, &hostIntUtf16);
-
-                    VBOX_UTF16_TO_UTF8(hostIntUtf16, &hostInt);
-                    ignore_value(VIR_STRDUP(def->nets[netAdpIncCnt]->data.network.name, hostInt));
-
-                    VBOX_UTF8_FREE(hostInt);
-                    VBOX_UTF16_FREE(hostIntUtf16);
-
-                } else {
-                    /* default to user type i.e. NAT in VirtualBox if this
-                     * dump is ever used to create a machine.
-                     */
-                    def->nets[netAdpIncCnt]->type = VIR_DOMAIN_NET_TYPE_USER;
-                }
-
-                gVBoxAPI.UINetworkAdapter.GetAdapterType(adapter, &adapterType);
-                if (adapterType == NetworkAdapterType_Am79C970A) {
-                    ignore_value(VIR_STRDUP(def->nets[netAdpIncCnt]->model, "Am79C970A"));
-                } else if (adapterType == NetworkAdapterType_Am79C973) {
-                    ignore_value(VIR_STRDUP(def->nets[netAdpIncCnt]->model, "Am79C973"));
-                } else if (adapterType == NetworkAdapterType_I82540EM) {
-                    ignore_value(VIR_STRDUP(def->nets[netAdpIncCnt]->model, "82540EM"));
-                } else if (adapterType == NetworkAdapterType_I82545EM) {
-                    ignore_value(VIR_STRDUP(def->nets[netAdpIncCnt]->model, "82545EM"));
-                } else if (adapterType == NetworkAdapterType_I82543GC) {
-                    ignore_value(VIR_STRDUP(def->nets[netAdpIncCnt]->model, "82543GC"));
-                } else if (gVBoxAPI.APIVersion >= 3000051 &&
-                           adapterType == NetworkAdapterType_Virtio) {
-                    /* Only vbox 3.1 and later support NetworkAdapterType_Virto */
-                    ignore_value(VIR_STRDUP(def->nets[netAdpIncCnt]->model, "virtio"));
-                }
-
-                gVBoxAPI.UINetworkAdapter.GetMACAddress(adapter, &MACAddressUtf16);
-                VBOX_UTF16_TO_UTF8(MACAddressUtf16, &MACAddress);
-                snprintf(macaddr, VIR_MAC_STRING_BUFLEN,
-                         "%c%c:%c%c:%c%c:%c%c:%c%c:%c%c",
-                         MACAddress[0], MACAddress[1], MACAddress[2], MACAddress[3],
-                         MACAddress[4], MACAddress[5], MACAddress[6], MACAddress[7],
-                         MACAddress[8], MACAddress[9], MACAddress[10], MACAddress[11]);
-
-                /* XXX some real error handling here some day ... */
-                ignore_value(virMacAddrParse(macaddr,
-                                             &def->nets[netAdpIncCnt]->mac));
-
-                netAdpIncCnt++;
-
-                VBOX_UTF16_FREE(MACAddressUtf16);
-                VBOX_UTF8_FREE(MACAddress);
+        if (enabled) {
+            net = vboxDumpNetwork(data, adapter);
+            if (VIR_APPEND_ELEMENT(def->nets, def->nnets, net) < 0) {
+                VBOX_RELEASE(adapter);
+                return -1;
             }
-
-            VBOX_RELEASE(adapter);
         }
+
+        VBOX_RELEASE(adapter);
     }
+
+    return 0;
 }
 
 static void
@@ -3862,7 +3862,7 @@ vboxDumpAudio(virDomainDefPtr def, vboxDriverPtr data ATTRIBUTE_UNUSED,
     }
 }
 
-static void
+static int
 vboxDumpSerial(virDomainDefPtr def, vboxDriverPtr data, IMachine *machine, PRUint32 serialPortCount)
 {
     PRUint32 serialPortIncCount = 0;
@@ -3886,9 +3886,15 @@ vboxDumpSerial(virDomainDefPtr def, vboxDriverPtr data, IMachine *machine, PRUin
     }
 
     /* Allocate memory for the serial ports which are enabled */
-    if ((def->nserials > 0) && (VIR_ALLOC_N(def->serials, def->nserials) >= 0)) {
-        for (i = 0; i < def->nserials; i++)
-            ignore_value(VIR_ALLOC(def->serials[i]));
+    if (def->nserials > 0) {
+        if (VIR_ALLOC_N(def->serials, def->nserials) < 0)
+            return -1;
+
+        for (i = 0; i < def->nserials; i++) {
+            def->serials[i] = virDomainChrDefNew(NULL);
+            if (!def->serials[i])
+                return -1;
+        }
     }
 
     /* Now get the details about the serial ports here */
@@ -3936,7 +3942,8 @@ vboxDumpSerial(virDomainDefPtr def, vboxDriverPtr data, IMachine *machine, PRUin
 
                 if (pathUtf16) {
                     VBOX_UTF16_TO_UTF8(pathUtf16, &path);
-                    ignore_value(VIR_STRDUP(def->serials[serialPortIncCount]->source->data.file.path, path));
+                    if (VIR_STRDUP(def->serials[serialPortIncCount]->source->data.file.path, path) < 0)
+                        return -1;
                 }
 
                 serialPortIncCount++;
@@ -3948,9 +3955,10 @@ vboxDumpSerial(virDomainDefPtr def, vboxDriverPtr data, IMachine *machine, PRUin
             VBOX_RELEASE(serialPort);
         }
     }
+    return 0;
 }
 
-static void
+static int
 vboxDumpParallel(virDomainDefPtr def, vboxDriverPtr data, IMachine *machine, PRUint32 parallelPortCount)
 {
     PRUint32 parallelPortIncCount = 0;
@@ -3974,9 +3982,15 @@ vboxDumpParallel(virDomainDefPtr def, vboxDriverPtr data, IMachine *machine, PRU
     }
 
     /* Allocate memory for the parallel ports which are enabled */
-    if ((def->nparallels > 0) && (VIR_ALLOC_N(def->parallels, def->nparallels) >= 0)) {
-        for (i = 0; i < def->nparallels; i++)
-            ignore_value(VIR_ALLOC(def->parallels[i]));
+    if (def->nparallels > 0) {
+        if (VIR_ALLOC_N(def->parallels, def->nparallels) < 0)
+            return -1;
+
+        for (i = 0; i < def->nparallels; i++) {
+            def->parallels[i] = virDomainChrDefNew(NULL);
+            if (!def->parallels[i])
+                return -1;
+        }
     }
 
     /* Now get the details about the parallel ports here */
@@ -4011,7 +4025,8 @@ vboxDumpParallel(virDomainDefPtr def, vboxDriverPtr data, IMachine *machine, PRU
                 gVBoxAPI.UIParallelPort.GetPath(parallelPort, &pathUtf16);
 
                 VBOX_UTF16_TO_UTF8(pathUtf16, &path);
-                ignore_value(VIR_STRDUP(def->parallels[parallelPortIncCount]->source->data.file.path, path));
+                if (VIR_STRDUP(def->parallels[parallelPortIncCount]->source->data.file.path, path) < 0)
+                    return -1;
 
                 parallelPortIncCount++;
 
@@ -4022,6 +4037,7 @@ vboxDumpParallel(virDomainDefPtr def, vboxDriverPtr data, IMachine *machine, PRU
             VBOX_RELEASE(parallelPort);
         }
     }
+    return 0;
 }
 
 static char *vboxDomainGetXMLDesc(virDomainPtr dom, unsigned int flags)
@@ -4159,11 +4175,16 @@ static char *vboxDomainGetXMLDesc(virDomainPtr dom, unsigned int flags)
     if (vboxDumpDisks(def, data, machine) < 0)
         goto cleanup;
 
-    vboxDumpSharedFolders(def, data, machine);
-    vboxDumpNetwork(def, data, machine, networkAdapterCount);
+    if (vboxDumpSharedFolders(def, data, machine) < 0)
+        goto cleanup;
+    if (vboxDumpNetworks(def, data, machine, networkAdapterCount) < 0)
+        goto cleanup;
     vboxDumpAudio(def, data, machine);
-    vboxDumpSerial(def, data, machine, serialPortCount);
-    vboxDumpParallel(def, data, machine, parallelPortCount);
+
+    if (vboxDumpSerial(def, data, machine, serialPortCount) < 0)
+        goto cleanup;
+    if (vboxDumpParallel(def, data, machine, parallelPortCount) < 0)
+        goto cleanup;
 
     /* dump USB devices/filters if active */
     vboxHostDeviceGetXMLDesc(data, def, machine);

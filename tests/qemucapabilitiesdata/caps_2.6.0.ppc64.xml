@@ -169,9 +169,10 @@
   <flag name='virtio-gpu.max_outputs'/>
   <flag name='spapr-vty'/>
   <flag name='isa-serial'/>
+  <flag name='dump-completed'/>
   <version>2006000</version>
   <kvmVersion>0</kvmVersion>
-  <microcodeVersion>263602</microcodeVersion>
+  <microcodeVersion>263005</microcodeVersion>
   <package></package>
   <arch>ppc64</arch>
   <cpu type='kvm' name='default'/>

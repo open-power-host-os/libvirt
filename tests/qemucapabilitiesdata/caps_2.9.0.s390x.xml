@@ -141,9 +141,10 @@
   <flag name='sclplmconsole'/>
   <flag name='disk-share-rw'/>
   <flag name='iscsi.password-secret'/>
+  <flag name='dump-completed'/>
   <version>2009000</version>
   <kvmVersion>0</kvmVersion>
-  <microcodeVersion>265878</microcodeVersion>
+  <microcodeVersion>265051</microcodeVersion>
   <package></package>
   <arch>s390x</arch>
   <hostCPU type='kvm' model='z13.2-base' migratability='no'>

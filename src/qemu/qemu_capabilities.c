@@ -46,12 +46,14 @@
 #include "qemu_domain.h"
 #define __QEMU_CAPSPRIV_H_ALLOW__
 #include "qemu_capspriv.h"
+#include "qemu_qapi.h"
 
 #include <fcntl.h>
 #include <sys/stat.h>
 #include <unistd.h>
 #include <sys/wait.h>
 #include <stdarg.h>
+#include <sys/utsname.h>
 
 #define VIR_FROM_THIS VIR_FROM_QEMU
 
@@ -457,6 +459,13 @@ VIR_ENUM_IMPL(virQEMUCaps, QEMU_CAPS_LAST,
               /* 280 */
               "pl011",
               "machine.pseries.max-cpu-compat",
+              "dump-completed",
+              "virtio-gpu-ccw",
+              "virtio-keyboard-ccw",
+
+              /* 285 */
+              "virtio-mouse-ccw",
+              "virtio-tablet-ccw",
     );
 
 
@@ -510,6 +519,7 @@ struct _virQEMUCaps {
     unsigned int libvirtVersion;
     unsigned int microcodeVersion;
     char *package;
+    char *kernelVersion;
 
     virArch arch;
 
@@ -1574,9 +1584,9 @@ struct virQEMUCapsStringFlags virQEMUCapsCommands[] = {
     { "migrate-incoming", QEMU_CAPS_INCOMING_DEFER },
     { "query-hotpluggable-cpus", QEMU_CAPS_QUERY_HOTPLUGGABLE_CPUS },
     { "query-qmp-schema", QEMU_CAPS_QUERY_QMP_SCHEMA },
-    { "query-cpu-model-expansion", QEMU_CAPS_QUERY_CPU_MODEL_EXPANSION},
-    { "query-cpu-definitions", QEMU_CAPS_QUERY_CPU_DEFINITIONS},
-    { "query-named-block-nodes", QEMU_CAPS_QUERY_NAMED_BLOCK_NODES}
+    { "query-cpu-model-expansion", QEMU_CAPS_QUERY_CPU_MODEL_EXPANSION },
+    { "query-cpu-definitions", QEMU_CAPS_QUERY_CPU_DEFINITIONS },
+    { "query-named-block-nodes", QEMU_CAPS_QUERY_NAMED_BLOCK_NODES },
 };
 
 struct virQEMUCapsStringFlags virQEMUCapsMigration[] = {
@@ -1591,6 +1601,7 @@ struct virQEMUCapsStringFlags virQEMUCapsEvents[] = {
     { "VSERPORT_CHANGE", QEMU_CAPS_VSERPORT_CHANGE },
     { "DEVICE_TRAY_MOVED", QEMU_CAPS_DEVICE_TRAY_MOVED },
     { "BLOCK_WRITE_THRESHOLD", QEMU_CAPS_BLOCK_WRITE_THRESHOLD },
+    { "DUMP_COMPLETED", QEMU_CAPS_DUMP_COMPLETED },
 };
 
 struct virQEMUCapsStringFlags virQEMUCapsObjectTypes[] = {
@@ -1690,10 +1701,17 @@ struct virQEMUCapsStringFlags virQEMUCapsObjectTypes[] = {
     { "sclplmconsole", QEMU_CAPS_DEVICE_SCLPLMCONSOLE },
     { "isa-serial", QEMU_CAPS_DEVICE_ISA_SERIAL },
     { "pl011", QEMU_CAPS_DEVICE_PL011 },
+    { "virtio-gpu-ccw", QEMU_CAPS_DEVICE_VIRTIO_GPU_CCW },
+    { "virtio-keyboard-ccw", QEMU_CAPS_DEVICE_VIRTIO_KEYBOARD_CCW },
+    { "virtio-mouse-ccw", QEMU_CAPS_DEVICE_VIRTIO_MOUSE_CCW },
+    { "virtio-tablet-ccw", QEMU_CAPS_DEVICE_VIRTIO_TABLET_CCW },
 };
 
 static struct virQEMUCapsStringFlags virQEMUCapsObjectPropsVirtioBalloon[] = {
     { "deflate-on-oom", QEMU_CAPS_VIRTIO_BALLOON_AUTODEFLATE },
+    { "disable-legacy", QEMU_CAPS_VIRTIO_PCI_DISABLE_LEGACY },
+    { "iommu_platform", QEMU_CAPS_VIRTIO_PCI_IOMMU_PLATFORM },
+    { "ats", QEMU_CAPS_VIRTIO_PCI_ATS },
 };
 
 static struct virQEMUCapsStringFlags virQEMUCapsObjectPropsVirtioBlk[] = {
@@ -1705,6 +1723,9 @@ static struct virQEMUCapsStringFlags virQEMUCapsObjectPropsVirtioBlk[] = {
     { "logical_block_size", QEMU_CAPS_BLOCKIO },
     { "num-queues", QEMU_CAPS_VIRTIO_BLK_NUM_QUEUES },
     { "share-rw", QEMU_CAPS_DISK_SHARE_RW },
+    { "disable-legacy", QEMU_CAPS_VIRTIO_PCI_DISABLE_LEGACY },
+    { "iommu_platform", QEMU_CAPS_VIRTIO_PCI_IOMMU_PLATFORM },
+    { "ats", QEMU_CAPS_VIRTIO_PCI_ATS },
 };
 
 static struct virQEMUCapsStringFlags virQEMUCapsObjectPropsVirtioNet[] = {
@@ -1713,6 +1734,9 @@ static struct virQEMUCapsStringFlags virQEMUCapsObjectPropsVirtioNet[] = {
     { "rx_queue_size", QEMU_CAPS_VIRTIO_NET_RX_QUEUE_SIZE },
     { "tx_queue_size", QEMU_CAPS_VIRTIO_NET_TX_QUEUE_SIZE },
     { "host_mtu", QEMU_CAPS_VIRTIO_NET_HOST_MTU },
+    { "disable-legacy", QEMU_CAPS_VIRTIO_PCI_DISABLE_LEGACY },
+    { "iommu_platform", QEMU_CAPS_VIRTIO_PCI_IOMMU_PLATFORM },
+    { "ats", QEMU_CAPS_VIRTIO_PCI_ATS },
 };
 
 static struct virQEMUCapsStringFlags virQEMUCapsObjectPropsSpaprPCIHostBridge[] = {
@@ -1721,6 +1745,9 @@ static struct virQEMUCapsStringFlags virQEMUCapsObjectPropsSpaprPCIHostBridge[] 
 
 static struct virQEMUCapsStringFlags virQEMUCapsObjectPropsVirtioSCSI[] = {
     { "iothread", QEMU_CAPS_VIRTIO_SCSI_IOTHREAD },
+    { "disable-legacy", QEMU_CAPS_VIRTIO_PCI_DISABLE_LEGACY },
+    { "iommu_platform", QEMU_CAPS_VIRTIO_PCI_IOMMU_PLATFORM },
+    { "ats", QEMU_CAPS_VIRTIO_PCI_ATS },
 };
 
 static struct virQEMUCapsStringFlags virQEMUCapsObjectPropsPCIAssign[] = {
@@ -1795,6 +1822,9 @@ static struct virQEMUCapsStringFlags virQEMUCapsObjectPropsQxl[] = {
 static struct virQEMUCapsStringFlags virQEMUCapsObjectPropsVirtioGpu[] = {
     { "virgl", QEMU_CAPS_VIRTIO_GPU_VIRGL },
     { "max_outputs", QEMU_CAPS_VIRTIO_GPU_MAX_OUTPUTS },
+    { "disable-legacy", QEMU_CAPS_VIRTIO_PCI_DISABLE_LEGACY },
+    { "iommu_platform", QEMU_CAPS_VIRTIO_PCI_IOMMU_PLATFORM },
+    { "ats", QEMU_CAPS_VIRTIO_PCI_ATS },
 };
 
 static struct virQEMUCapsStringFlags virQEMUCapsObjectPropsICH9[] = {
@@ -1813,7 +1843,7 @@ static struct virQEMUCapsStringFlags virQEMUCapsObjectPropsIntelIOMMU[] = {
     { "device-iotlb", QEMU_CAPS_INTEL_IOMMU_DEVICE_IOTLB },
 };
 
-/* see documentation for virQEMUCapsQMPSchemaGetByPath for the query format */
+/* see documentation for virQEMUQAPISchemaPathGet for the query format */
 static struct virQEMUCapsStringFlags virQEMUCapsQMPSchemaQueries[] = {
     { "blockdev-add/arg-type/options/+gluster/debug-level", QEMU_CAPS_GLUSTER_DEBUG_LEVEL},
     { "blockdev-add/arg-type/+gluster/debug", QEMU_CAPS_GLUSTER_DEBUG_LEVEL},
@@ -1834,25 +1864,25 @@ static struct virQEMUCapsObjectTypeProps virQEMUCapsObjectProps[] = {
       -1 },
     { "virtio-net-pci", virQEMUCapsObjectPropsVirtioNet,
       ARRAY_CARDINALITY(virQEMUCapsObjectPropsVirtioNet),
-      -1 },
+      QEMU_CAPS_DEVICE_VIRTIO_NET },
     { "virtio-scsi-pci", virQEMUCapsObjectPropsVirtioSCSI,
       ARRAY_CARDINALITY(virQEMUCapsObjectPropsVirtioSCSI),
-      -1 },
+      QEMU_CAPS_VIRTIO_SCSI },
     { "virtio-blk-ccw", virQEMUCapsObjectPropsVirtioBlk,
       ARRAY_CARDINALITY(virQEMUCapsObjectPropsVirtioBlk),
-      -1 },
+      QEMU_CAPS_VIRTIO_CCW },
     { "virtio-net-ccw", virQEMUCapsObjectPropsVirtioNet,
       ARRAY_CARDINALITY(virQEMUCapsObjectPropsVirtioNet),
-      -1 },
+      QEMU_CAPS_DEVICE_VIRTIO_NET },
     { "virtio-scsi-ccw", virQEMUCapsObjectPropsVirtioSCSI,
       ARRAY_CARDINALITY(virQEMUCapsObjectPropsVirtioSCSI),
-      -1 },
+      QEMU_CAPS_VIRTIO_SCSI },
     { "virtio-blk-s390", virQEMUCapsObjectPropsVirtioBlk,
       ARRAY_CARDINALITY(virQEMUCapsObjectPropsVirtioBlk),
-      -1 },
+      QEMU_CAPS_VIRTIO_S390 },
     { "virtio-net-s390", virQEMUCapsObjectPropsVirtioNet,
       ARRAY_CARDINALITY(virQEMUCapsObjectPropsVirtioNet),
-      -1 },
+      QEMU_CAPS_DEVICE_VIRTIO_NET },
     { "pci-assign", virQEMUCapsObjectPropsPCIAssign,
       ARRAY_CARDINALITY(virQEMUCapsObjectPropsPCIAssign),
       -1 },
@@ -1861,7 +1891,7 @@ static struct virQEMUCapsObjectTypeProps virQEMUCapsObjectProps[] = {
       -1 },
     { "vfio-pci", virQEMUCapsObjectPropsVfioPCI,
       ARRAY_CARDINALITY(virQEMUCapsObjectPropsVfioPCI),
-      -1 },
+      QEMU_CAPS_DEVICE_VFIO_PCI },
     { "scsi-disk", virQEMUCapsObjectPropsSCSIDisk,
       ARRAY_CARDINALITY(virQEMUCapsObjectPropsSCSIDisk),
       -1 },
@@ -1873,13 +1903,13 @@ static struct virQEMUCapsObjectTypeProps virQEMUCapsObjectProps[] = {
       -1 },
     { "usb-redir", virQEMUCapsObjectPropsUSBRedir,
       ARRAY_CARDINALITY(virQEMUCapsObjectPropsUSBRedir),
-      -1 },
+      QEMU_CAPS_USB_REDIR },
     { "usb-host", virQEMUCapsObjectPropsUSBHost,
       ARRAY_CARDINALITY(virQEMUCapsObjectPropsUSBHost),
       -1 },
     { "scsi-generic", virQEMUCapsObjectPropsSCSIGeneric,
       ARRAY_CARDINALITY(virQEMUCapsObjectPropsSCSIGeneric),
-      -1 },
+      QEMU_CAPS_DEVICE_SCSI_GENERIC },
     { "i440FX-pcihost", virQEMUCapsObjectPropsI440FXPCIHost,
       ARRAY_CARDINALITY(virQEMUCapsObjectPropsI440FXPCIHost),
       -1 },
@@ -1888,25 +1918,25 @@ static struct virQEMUCapsObjectTypeProps virQEMUCapsObjectProps[] = {
       -1 },
     { "usb-storage", virQEMUCapsObjectPropsUSBStorage,
       ARRAY_CARDINALITY(virQEMUCapsObjectPropsUSBStorage),
-      -1 },
+      QEMU_CAPS_DEVICE_USB_STORAGE },
     { "kvm-pit", virQEMUCapsObjectPropsKVMPit,
       ARRAY_CARDINALITY(virQEMUCapsObjectPropsKVMPit),
       -1 },
     { "VGA", virQEMUCapsObjectPropsVGA,
       ARRAY_CARDINALITY(virQEMUCapsObjectPropsVGA),
-      -1 },
+      QEMU_CAPS_DEVICE_VGA },
     { "vmware-svga", virQEMUCapsObjectPropsVmwareSvga,
       ARRAY_CARDINALITY(virQEMUCapsObjectPropsVmwareSvga),
-      -1 },
+      QEMU_CAPS_DEVICE_VMWARE_SVGA },
     { "qxl", virQEMUCapsObjectPropsQxl,
       ARRAY_CARDINALITY(virQEMUCapsObjectPropsQxl),
-      -1 },
+      QEMU_CAPS_DEVICE_QXL },
     { "virtio-gpu-pci", virQEMUCapsObjectPropsVirtioGpu,
       ARRAY_CARDINALITY(virQEMUCapsObjectPropsVirtioGpu),
-      -1 },
+      QEMU_CAPS_DEVICE_VIRTIO_GPU },
     { "virtio-gpu-device", virQEMUCapsObjectPropsVirtioGpu,
       ARRAY_CARDINALITY(virQEMUCapsObjectPropsVirtioGpu),
-      -1 },
+      QEMU_CAPS_DEVICE_VIRTIO_GPU },
     { "ICH9-LPC", virQEMUCapsObjectPropsICH9,
       ARRAY_CARDINALITY(virQEMUCapsObjectPropsICH9),
       -1 },
@@ -1921,47 +1951,16 @@ static struct virQEMUCapsObjectTypeProps virQEMUCapsObjectProps[] = {
       -1 },
     { "nec-usb-xhci", virQEMUCapsObjectPropsUSBNECXHCI,
       ARRAY_CARDINALITY(virQEMUCapsObjectPropsUSBNECXHCI),
-      -1 },
+      QEMU_CAPS_NEC_USB_XHCI },
     { "intel-iommu", virQEMUCapsObjectPropsIntelIOMMU,
       ARRAY_CARDINALITY(virQEMUCapsObjectPropsIntelIOMMU),
       QEMU_CAPS_DEVICE_INTEL_IOMMU },
     { "spapr-pci-host-bridge", virQEMUCapsObjectPropsSpaprPCIHostBridge,
       ARRAY_CARDINALITY(virQEMUCapsObjectPropsSpaprPCIHostBridge),
       QEMU_CAPS_DEVICE_SPAPR_PCI_HOST_BRIDGE },
-};
-
-struct virQEMUCapsPropTypeObjects {
-    const char *prop;
-    int flag;
-    const char **objects;
-};
-
-static const char *virQEMUCapsVirtioPCIObjects[] = {
-     "virtio-balloon-pci",
-     "virtio-blk-pci",
-     "virtio-scsi-pci",
-     "virtio-serial-pci",
-     "virtio-9p-pci",
-     "virtio-net-pci",
-     "virtio-rng-pci",
-     "virtio-gpu-pci",
-     "virtio-input-host-pci",
-     "virtio-keyboard-pci",
-     "virtio-mouse-pci",
-     "virtio-tablet-pci",
-     NULL
-};
-
-static struct virQEMUCapsPropTypeObjects virQEMUCapsPropObjects[] = {
-    { "disable-legacy",
-      QEMU_CAPS_VIRTIO_PCI_DISABLE_LEGACY,
-      virQEMUCapsVirtioPCIObjects },
-    { "iommu_platform",
-      QEMU_CAPS_VIRTIO_PCI_IOMMU_PLATFORM,
-      virQEMUCapsVirtioPCIObjects },
-    { "ats",
-      QEMU_CAPS_VIRTIO_PCI_ATS,
-      virQEMUCapsVirtioPCIObjects },
+    { "virtio-gpu-ccw", virQEMUCapsObjectPropsVirtioGpu,
+      ARRAY_CARDINALITY(virQEMUCapsObjectPropsVirtioGpu),
+      QEMU_CAPS_DEVICE_VIRTIO_GPU_CCW },
 };
 
 
@@ -1974,34 +1973,12 @@ virQEMUCapsProcessStringFlags(virQEMUCapsPtr qemuCaps,
 {
     size_t i, j;
     for (i = 0; i < nflags; i++) {
-        for (j = 0; j < nvalues; j++) {
-            if (STREQ(values[j], flags[i].value)) {
-                virQEMUCapsSet(qemuCaps, flags[i].flag);
-                break;
-            }
-        }
-    }
-}
-
-
-static void
-virQEMUCapsProcessProps(virQEMUCapsPtr qemuCaps,
-                        size_t nprops,
-                        struct virQEMUCapsPropTypeObjects *props,
-                        const char *object,
-                        size_t nvalues,
-                        char *const*values)
-{
-    size_t i, j;
-
-    for (i = 0; i < nprops; i++) {
-        if (virQEMUCapsGet(qemuCaps, props[i].flag))
+        if (virQEMUCapsGet(qemuCaps, flags[i].flag))
             continue;
 
         for (j = 0; j < nvalues; j++) {
-            if (STREQ(values[j], props[i].prop)) {
-                if (virStringListHasString(props[i].objects, object))
-                    virQEMUCapsSet(qemuCaps, props[i].flag);
+            if (STREQ(values[j], flags[i].value)) {
+                virQEMUCapsSet(qemuCaps, flags[i].flag);
                 break;
             }
         }
@@ -2303,6 +2280,9 @@ virQEMUCapsPtr virQEMUCapsNewCopy(virQEMUCapsPtr qemuCaps)
     if (VIR_STRDUP(ret->package, qemuCaps->package) < 0)
         goto error;
 
+    if (VIR_STRDUP(ret->kernelVersion, qemuCaps->kernelVersion) < 0)
+        goto error;
+
     ret->arch = qemuCaps->arch;
 
     if (qemuCaps->kvmCPUModels) {
@@ -2363,6 +2343,7 @@ void virQEMUCapsDispose(void *obj)
     virBitmapFree(qemuCaps->flags);
 
     VIR_FREE(qemuCaps->package);
+    VIR_FREE(qemuCaps->kernelVersion);
     VIR_FREE(qemuCaps->binary);
 
     VIR_FREE(qemuCaps->gicCapabilities);
@@ -2897,10 +2878,6 @@ virQEMUCapsProbeQMPObjects(virQEMUCapsPtr qemuCaps,
                                       virQEMUCapsObjectProps[i].nprops,
                                       virQEMUCapsObjectProps[i].props,
                                       nvalues, values);
-        virQEMUCapsProcessProps(qemuCaps,
-                                ARRAY_CARDINALITY(virQEMUCapsPropObjects),
-                                virQEMUCapsPropObjects, type,
-                                nvalues, values);
         virStringListFreeCount(values, nvalues);
     }
 
@@ -3834,6 +3811,7 @@ struct _virQEMUCapsCachePriv {
     gid_t runGid;
     virArch hostArch;
     unsigned int microcodeVersion;
+    char *kernelVersion;
 };
 typedef struct _virQEMUCapsCachePriv virQEMUCapsCachePriv;
 typedef virQEMUCapsCachePriv *virQEMUCapsCachePrivPtr;
@@ -3845,6 +3823,7 @@ virQEMUCapsCachePrivFree(void *privData)
     virQEMUCapsCachePrivPtr priv = privData;
 
     VIR_FREE(priv->libDir);
+    VIR_FREE(priv->kernelVersion);
     VIR_FREE(priv);
 }
 
@@ -3967,6 +3946,12 @@ virQEMUCapsLoadCache(virArch hostArch,
         qemuCaps->package = virXPathString("string(./package)", ctxt);
         if (!qemuCaps->package &&
             VIR_STRDUP(qemuCaps->package, "") < 0)
+            goto cleanup;
+    }
+
+    if (virXPathBoolean("boolean(./kernelVersion)", ctxt) > 0) {
+        qemuCaps->kernelVersion = virXPathString("string(./kernelVersion)", ctxt);
+        if (!qemuCaps->kernelVersion)
             goto cleanup;
     }
 
@@ -4248,6 +4233,10 @@ virQEMUCapsFormatCache(virQEMUCapsPtr qemuCaps)
         virBufferAsprintf(&buf, "<package>%s</package>\n",
                           qemuCaps->package);
 
+    if (qemuCaps->kernelVersion)
+        virBufferAsprintf(&buf, "<kernelVersion>%s</kernelVersion>\n",
+                          qemuCaps->kernelVersion);
+
     virBufferAsprintf(&buf, "<arch>%s</arch>\n",
                       virArchToString(qemuCaps->arch));
 
@@ -4385,14 +4374,24 @@ virQEMUCapsIsValid(void *data,
         return false;
     }
 
-    if (virQEMUCapsGet(qemuCaps, QEMU_CAPS_KVM) &&
-        priv->microcodeVersion != qemuCaps->microcodeVersion) {
-        VIR_DEBUG("Outdated capabilities for '%s': microcode version changed "
-                  "(%u vs %u)",
-                  qemuCaps->binary,
-                  priv->microcodeVersion,
-                  qemuCaps->microcodeVersion);
-        return false;
+    if (virQEMUCapsGet(qemuCaps, QEMU_CAPS_KVM)) {
+        if (priv->microcodeVersion != qemuCaps->microcodeVersion) {
+            VIR_DEBUG("Outdated capabilities for '%s': microcode version "
+                      "changed (%u vs %u)",
+                      qemuCaps->binary,
+                      priv->microcodeVersion,
+                      qemuCaps->microcodeVersion);
+            return false;
+        }
+
+        if (STRNEQ_NULLABLE(priv->kernelVersion, qemuCaps->kernelVersion)) {
+            VIR_DEBUG("Outdated capabilities for '%s': kernel version changed "
+                      "('%s' vs '%s')",
+                      qemuCaps->binary,
+                      priv->kernelVersion,
+                      qemuCaps->kernelVersion);
+            return false;
+        }
     }
 
     return true;
@@ -4579,178 +4578,26 @@ virQEMUCapsInitQMPBasicArch(virQEMUCapsPtr qemuCaps)
 }
 
 
-/**
- * virQEMUCapsQMPSchemaObjectGetType:
- * @field: name of the object containing the requested type
- * @name: name of the requested type
- * @namefield: name of the object property holding @name
- *
- * Helper that selects the type of a QMP schema object member or it's variant
- * member. Returns the type string on success or NULL on error.
- */
-static const char *
-virQEMUCapsQMPSchemaObjectGetType(const char *field,
-                                  const char *name,
-                                  const char *namefield,
-                                  virJSONValuePtr elem)
-{
-    virJSONValuePtr arr;
-    virJSONValuePtr cur;
-    const char *curname;
-    const char *type;
-    size_t i;
-
-    if (!(arr = virJSONValueObjectGetArray(elem, field)))
-        return NULL;
-
-    for (i = 0; i < virJSONValueArraySize(arr); i++) {
-        if (!(cur = virJSONValueArrayGet(arr, i)) ||
-            !(curname = virJSONValueObjectGetString(cur, namefield)) ||
-            !(type = virJSONValueObjectGetString(cur, "type")))
-            continue;
-
-        if (STREQ(name, curname))
-            return type;
-    }
-
-    return NULL;
-}
-
-
-static virJSONValuePtr
-virQEMUCapsQMPSchemaTraverse(const char *baseName,
-                             char **query,
-                             virHashTablePtr schema)
-{
-    virJSONValuePtr base;
-    const char *metatype;
-
-    do {
-        if (!(base = virHashLookup(schema, baseName)))
-            return NULL;
-
-        if (!*query)
-            return base;
-
-        if (!(metatype = virJSONValueObjectGetString(base, "meta-type")))
-            return NULL;
-
-        /* flatten arrays by default */
-        if (STREQ(metatype, "array")) {
-            if (!(baseName = virJSONValueObjectGetString(base, "element-type")))
-                return NULL;
-
-            continue;
-        } else if (STREQ(metatype, "object")) {
-            if (**query == '+')
-                baseName = virQEMUCapsQMPSchemaObjectGetType("variants",
-                                                             *query + 1,
-                                                             "case", base);
-            else
-                baseName = virQEMUCapsQMPSchemaObjectGetType("members",
-                                                             *query,
-                                                             "name", base);
-
-            if (!baseName)
-                return NULL;
-        } else if (STREQ(metatype, "command") ||
-                   STREQ(metatype, "event")) {
-            if (!(baseName = virJSONValueObjectGetString(base, *query)))
-                return NULL;
-        } else {
-            /* alternates, basic types and enums can't be entered */
-            return NULL;
-        }
-
-        query++;
-    } while (*query);
-
-    return base;
-}
-
-
-/**
- * virQEMUCapsQMPSchemaGetByPath:
- * @query: string specifying the required data type (see below)
- * @schema: hash table containing the schema data
- * @entry: filled with the located schema object requested by @query
- *
- * Retrieves the requested schema entry specified by @query to @entry. The
- * @query parameter has the following syntax which is very closely tied to the
- * qemu schema syntax entries separated by slashes with a few special characters:
- *
- * "command_or_event/attribute/subattribute/+variant_discriminator/subattribute"
- *
- * command_or_event: name of the event or attribute to introspect
- * attribute: selects whether arguments or return type should be introspected
- *            ("arg-type" or "ret-type" for commands, "arg-type" for events)
- * subattribute: specifies member name of object types
- * +variant_discriminator: In the case of unionized objects, select a
- *                         specific case to introspect.
- *
- * Array types are automatically flattened to the singular type. Alternate
- * types are currently not supported.
- *
- * The above types can be chained arbitrarily using slashes to construct any
- * path into the schema tree.
- *
- * Returns 0 on success (including if the requested schema was not found) and
- * fills @entry appropriately. On failure returns -1 and sets an appropriate
- * error message.
- */
-static int
-virQEMUCapsQMPSchemaGetByPath(const char *query,
-                              virHashTablePtr schema,
-                              virJSONValuePtr *entry)
-{
-    char **elems = NULL;
-
-    *entry = NULL;
-
-    if (!(elems = virStringSplit(query, "/", 0)))
-        return -1;
-
-    if (!*elems) {
-        virReportError(VIR_ERR_INTERNAL_ERROR, "%s", _("malformed query string"));
-        virStringListFree(elems);
-        return -1;
-    }
-
-    *entry = virQEMUCapsQMPSchemaTraverse(*elems, elems + 1, schema);
-
-    virStringListFree(elems);
-    return 0;
-}
-
-
-static bool
-virQEMUCapsQMPSchemaQueryPath(const char *query,
-                              virHashTablePtr schema)
-{
-    virJSONValuePtr entry;
-
-    if (virQEMUCapsQMPSchemaGetByPath(query, schema, &entry))
-        return false;
-
-    return !!entry;
-}
-
-
 static int
 virQEMUCapsProbeQMPSchemaCapabilities(virQEMUCapsPtr qemuCaps,
                                       qemuMonitorPtr mon)
 {
     struct virQEMUCapsStringFlags *entry;
-    virHashTablePtr schema;
+    virJSONValuePtr schemareply;
+    virHashTablePtr schema = NULL;
     size_t i;
 
-    if (!(schema = qemuMonitorQueryQMPSchema(mon)))
+    if (!(schemareply = qemuMonitorQueryQMPSchema(mon)))
         return -1;
+
+    if (!(schema = virQEMUQAPISchemaConvert(schemareply)))
+        return -1;
+    schemareply = NULL;
 
     for (i = 0; i < ARRAY_CARDINALITY(virQEMUCapsQMPSchemaQueries); i++) {
         entry = virQEMUCapsQMPSchemaQueries + i;
 
-        if (virQEMUCapsQMPSchemaQueryPath(entry->value, schema))
+        if (virQEMUQAPISchemaPathExists(entry->value, schema))
             virQEMUCapsSet(qemuCaps, entry->flag);
     }
 
@@ -5228,6 +5075,7 @@ virQEMUCapsNewForBinaryInternal(virArch hostArch,
                                 uid_t runUid,
                                 gid_t runGid,
                                 unsigned int microcodeVersion,
+                                const char *kernelVersion,
                                 bool qmpOnly)
 {
     virQEMUCapsPtr qemuCaps;
@@ -5284,8 +5132,12 @@ virQEMUCapsNewForBinaryInternal(virArch hostArch,
     virQEMUCapsInitHostCPUModel(qemuCaps, hostArch, VIR_DOMAIN_VIRT_KVM);
     virQEMUCapsInitHostCPUModel(qemuCaps, hostArch, VIR_DOMAIN_VIRT_QEMU);
 
-    if (virQEMUCapsGet(qemuCaps, QEMU_CAPS_KVM))
+    if (virQEMUCapsGet(qemuCaps, QEMU_CAPS_KVM)) {
         qemuCaps->microcodeVersion = microcodeVersion;
+
+        if (VIR_STRDUP(qemuCaps->kernelVersion, kernelVersion) < 0)
+            goto error;
+    }
 
  cleanup:
     VIR_FREE(qmperr);
@@ -5309,6 +5161,7 @@ virQEMUCapsNewData(const char *binary,
                                            priv->runUid,
                                            priv->runGid,
                                            priv->microcodeVersion,
+                                           priv->kernelVersion,
                                            false);
 }
 
@@ -5397,6 +5250,7 @@ virQEMUCapsCacheNew(const char *libDir,
     char *capsCacheDir = NULL;
     virFileCachePtr cache = NULL;
     virQEMUCapsCachePrivPtr priv = NULL;
+    struct utsname uts;
 
     if (virAsprintf(&capsCacheDir, "%s/capabilities", cacheDir) < 0)
         goto error;
@@ -5416,6 +5270,10 @@ virQEMUCapsCacheNew(const char *libDir,
     priv->runUid = runUid;
     priv->runGid = runGid;
     priv->microcodeVersion = microcodeVersion;
+
+    if (uname(&uts) == 0 &&
+        virAsprintf(&priv->kernelVersion, "%s %s", uts.release, uts.version) < 0)
+        goto error;
 
  cleanup:
     VIR_FREE(capsCacheDir);

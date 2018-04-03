@@ -58,22 +58,22 @@ libxml2.registerErrorHandler(callback, None)
 # The dictionary of tables required and the SQL command needed
 # to create them
 #
-TABLES={
-  "symbols" : """CREATE TABLE symbols (
+TABLES = {
+  "symbols": """CREATE TABLE symbols (
            name varchar(255) BINARY NOT NULL,
            module varchar(255) BINARY NOT NULL,
            type varchar(25) NOT NULL,
            descr varchar(255),
            UNIQUE KEY name (name),
            KEY module (module))""",
-  "words" : """CREATE TABLE words (
+  "words": """CREATE TABLE words (
            name varchar(50) BINARY NOT NULL,
            symbol varchar(255) BINARY NOT NULL,
            relevance int,
            KEY name (name),
            KEY symbol (symbol),
            UNIQUE KEY ID (name, symbol))""",
-  "wordsHTML" : """CREATE TABLE wordsHTML (
+  "wordsHTML": """CREATE TABLE wordsHTML (
            name varchar(50) BINARY NOT NULL,
            resource varchar(255) BINARY NOT NULL,
            section varchar(255),
@@ -82,30 +82,30 @@ TABLES={
            KEY name (name),
            KEY resource (resource),
            UNIQUE KEY ref (name, resource))""",
-  "wordsArchive" : """CREATE TABLE wordsArchive (
+  "wordsArchive": """CREATE TABLE wordsArchive (
            name varchar(50) BINARY NOT NULL,
            ID int(11) NOT NULL,
            relevance int,
            KEY name (name),
            UNIQUE KEY ref (name, ID))""",
-  "pages" : """CREATE TABLE pages (
+  "pages": """CREATE TABLE pages (
            resource varchar(255) BINARY NOT NULL,
            title varchar(255) BINARY NOT NULL,
            UNIQUE KEY name (resource))""",
-  "archives" : """CREATE TABLE archives (
+  "archives": """CREATE TABLE archives (
            ID int(11) NOT NULL auto_increment,
            resource varchar(255) BINARY NOT NULL,
            title varchar(255) BINARY NOT NULL,
            UNIQUE KEY id (ID,resource(255)),
            INDEX (ID),
            INDEX (resource))""",
-  "Queries" : """CREATE TABLE Queries (
+  "Queries": """CREATE TABLE Queries (
            ID int(11) NOT NULL auto_increment,
            Value varchar(50) NOT NULL,
            Count int(11) NOT NULL,
            UNIQUE KEY id (ID,Value(35)),
            INDEX (ID))""",
-  "AllQueries" : """CREATE TABLE AllQueries (
+  "AllQueries": """CREATE TABLE AllQueries (
            ID int(11) NOT NULL auto_increment,
            Value varchar(50) NOT NULL,
            Count int(11) NOT NULL,
@@ -116,8 +116,8 @@ TABLES={
 #
 # The XML API description file to parse
 #
-API="libvirt-api.xml"
-DB=None
+API = "libvirt-api.xml"
+DB = None
 
 #########################################################################
 #                                                                       #
@@ -144,7 +144,7 @@ def createTable(db, name):
         return -1
     return ret
 
-def checkTables(db, verbose = 1):
+def checkTables(db, verbose=1):
     global TABLES
 
     if db is None:
@@ -171,7 +171,7 @@ def checkTables(db, verbose = 1):
             if verbose:
                 print "Table %s contains %d records" % (table, row[0])
         except:
-            print "Troubles with table %s : repairing" % (table)
+            print "Troubles with table %s: repairing" % (table)
             ret = c.execute("repair table %s" % table)
             print "repairing returned %d" % (ret)
             ret = c.execute("SELECT count(*) from %s" % table)
@@ -188,7 +188,7 @@ def checkTables(db, verbose = 1):
         pass
     return 0
 
-def openMySQL(db="libvir", passwd=None, verbose = 1):
+def openMySQL(db="libvir", passwd=None, verbose=1):
     global DB
 
     if passwd is None:
@@ -275,25 +275,25 @@ def updateSymbol(name, module, type, desc):
 
     return ret
 
-def addFunction(name, module, desc = ""):
+def addFunction(name, module, desc=""):
     return updateSymbol(name, module, 'function', desc)
 
-def addMacro(name, module, desc = ""):
+def addMacro(name, module, desc=""):
     return updateSymbol(name, module, 'macro', desc)
 
-def addEnum(name, module, desc = ""):
+def addEnum(name, module, desc=""):
     return updateSymbol(name, module, 'enum', desc)
 
-def addStruct(name, module, desc = ""):
+def addStruct(name, module, desc=""):
     return updateSymbol(name, module, 'struct', desc)
 
-def addConst(name, module, desc = ""):
+def addConst(name, module, desc=""):
     return updateSymbol(name, module, 'const', desc)
 
-def addType(name, module, desc = ""):
+def addType(name, module, desc=""):
     return updateSymbol(name, module, 'type', desc)
 
-def addFunctype(name, module, desc = ""):
+def addFunctype(name, module, desc=""):
     return updateSymbol(name, module, 'functype', desc)
 
 def addPage(resource, title):
@@ -1041,7 +1041,7 @@ def analyzeHTMLPages():
             doc = libxml2.htmlParseFile(html, None)
         try:
             res = analyzeHTML(doc, html)
-            print "Parsed %s : %d paragraphs" % (html, res)
+            print "Parsed %s: %d paragraphs" % (html, res)
             ret = ret + 1
         except:
             print "could not parse %s" % (html)
@@ -1055,7 +1055,7 @@ def analyzeHTMLPages():
 
 import time
 
-def getXMLDateArchive(t = None):
+def getXMLDateArchive(t=None):
     if t is None:
         t = time.time()
     T = time.gmtime(t)
@@ -1064,7 +1064,7 @@ def getXMLDateArchive(t = None):
     url = "http://www.redhat.com/archives/libvir-list/%d-%s/date.html" % (year, month)
     return url
 
-def scanXMLMsgArchive(url, title, force = 0):
+def scanXMLMsgArchive(url, title, force=0):
     if url is None or title is None:
         return 0
 
@@ -1094,7 +1094,7 @@ def scanXMLMsgArchive(url, title, force = 0):
 
     return 1
 
-def scanXMLDateArchive(t = None, force = 0):
+def scanXMLDateArchive(t=None, force=0):
     global wordsDictArchive
 
     wordsDictArchive = {}
@@ -1138,7 +1138,7 @@ def scanXMLDateArchive(t = None, force = 0):
 #          Main code: open the DB, the API XML and analyze it           #
 #                                                                       #
 #########################################################################
-def analyzeArchives(t = None, force = 0):
+def analyzeArchives(t=None, force=0):
     global wordsDictArchive
 
     ret = scanXMLDateArchive(t, force)
@@ -1230,7 +1230,7 @@ def main():
             elif args[i] == '--archive-year':
                 i = i + 1
                 year = args[i]
-                months = ["January" , "February", "March", "April", "May",
+                months = ["January", "February", "March", "April", "May",
                           "June", "July", "August", "September", "October",
                           "November", "December"]
                 for month in months:

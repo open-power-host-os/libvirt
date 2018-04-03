@@ -182,15 +182,14 @@ static void virNetServerHandleJob(void *jobOpaque, void *opaque)
     VIR_FREE(job);
 }
 
-static int virNetServerDispatchNewMessage(virNetServerClientPtr client,
-                                          virNetMessagePtr msg,
-                                          void *opaque)
+static void virNetServerDispatchNewMessage(virNetServerClientPtr client,
+                                           virNetMessagePtr msg,
+                                           void *opaque)
 {
     virNetServerPtr srv = opaque;
     virNetServerProgramPtr prog = NULL;
     unsigned int priority = 0;
     size_t i;
-    int ret = -1;
 
     VIR_DEBUG("server=%p client=%p message=%p",
               srv, client, msg);
@@ -207,7 +206,7 @@ static int virNetServerDispatchNewMessage(virNetServerClientPtr client,
         virNetServerJobPtr job;
 
         if (VIR_ALLOC(job) < 0)
-            goto cleanup;
+            goto error;
 
         job->client = client;
         job->msg = msg;
@@ -217,20 +216,25 @@ static int virNetServerDispatchNewMessage(virNetServerClientPtr client,
             priority = virNetServerProgramGetPriority(prog, msg->header.proc);
         }
 
-        ret = virThreadPoolSendJob(srv->workers, priority, job);
-
-        if (ret < 0) {
+        virObjectRef(client);
+        if (virThreadPoolSendJob(srv->workers, priority, job) < 0) {
+            virObjectUnref(client);
             VIR_FREE(job);
             virObjectUnref(prog);
+            goto error;
         }
     } else {
-        ret = virNetServerProcessMsg(srv, client, prog, msg);
+        if (virNetServerProcessMsg(srv, client, prog, msg) < 0)
+            goto error;
     }
 
- cleanup:
     virObjectUnlock(srv);
+    return;
 
-    return ret;
+ error:
+    virNetMessageFree(msg);
+    virNetServerClientClose(client);
+    virObjectUnlock(srv);
 }
 
 /**
@@ -540,12 +544,12 @@ virNetServerPtr virNetServerNewPostExecRestart(virJSONValuePtr object,
             goto error;
         }
 
-        if (!(client = virNetServerClientNewPostExecRestart(child,
+        if (!(client = virNetServerClientNewPostExecRestart(srv,
+                                                            child,
                                                             clientPrivNewPostExecRestart,
                                                             clientPrivPreExecRestart,
                                                             clientPrivFree,
-                                                            clientPrivOpaque,
-                                                            srv)))
+                                                            clientPrivOpaque)))
             goto error;
 
         if (virNetServerAddClient(srv, client) < 0) {
@@ -576,18 +580,21 @@ virJSONValuePtr virNetServerPreExecRestart(virNetServerPtr srv)
         goto error;
 
     if (virJSONValueObjectAppendNumberUint(object, "min_workers",
+                                           srv->workers == NULL ? 0 :
                                            virThreadPoolGetMinWorkers(srv->workers)) < 0) {
         virReportError(VIR_ERR_INTERNAL_ERROR, "%s",
                        _("Cannot set min_workers data in JSON document"));
         goto error;
     }
     if (virJSONValueObjectAppendNumberUint(object, "max_workers",
+                                           srv->workers == NULL ? 0 :
                                            virThreadPoolGetMaxWorkers(srv->workers)) < 0) {
         virReportError(VIR_ERR_INTERNAL_ERROR, "%s",
                        _("Cannot set max_workers data in JSON document"));
         goto error;
     }
     if (virJSONValueObjectAppendNumberUint(object, "priority_workers",
+                                           srv->workers == NULL ? 0 :
                                            virThreadPoolGetPriorityWorkers(srv->workers)) < 0) {
         virReportError(VIR_ERR_INTERNAL_ERROR, "%s",
                        _("Cannot set priority_workers data in JSON document"));
@@ -804,9 +811,6 @@ void virNetServerDispose(void *obj)
     size_t i;
 
     VIR_FREE(srv->name);
-
-    for (i = 0; i < srv->nservices; i++)
-        virNetServerServiceToggle(srv->services[i], false);
 
     virThreadPoolFree(srv->workers);
 

@@ -5,15 +5,27 @@ cache: ccache
 matrix:
   include:
     - compiler: gcc
-      dist: precise
-    - compiler: gcc
       dist: trusty
-    - compiler: clang
-      dist: precise
+      env:
+        - PYTHON=$(which python2)
+        - DISTCHECK_CONFIGURE_FLAGS="--with-init-script=upstart"
     - compiler: clang
       dist: trusty
+      env:
+        - PYTHON=$(which python3)
+        - DISTCHECK_CONFIGURE_FLAGS="--with-init-script=systemd"
     - compiler: clang
       os: osx
+      before_install:
+        - brew update
+        - brew unlink python
+        - brew upgrade
+        - brew install rpcgen yajl
+      script:
+        # We can't run make distcheck/syntax-check because they
+        # fail on macOS, but doing 'install' and 'dist' gives us
+        # some useful coverage
+        - make -j3 && make -j3 install && make -j3 dist
 
 addons:
   apt:
@@ -23,6 +35,7 @@ addons:
       - autoconf
       - automake
       - autopoint
+      - bash-completion
       - ccache
       - dnsmasq-base
       - dwarves
@@ -36,9 +49,9 @@ addons:
       - libaudit-dev
       - libavahi-client-dev
       - libblkid-dev
-      - libc-dev-bin
       - libc6-dev
       - libcap-ng-dev
+      - libc-dev-bin
       - libcurl4-gnutls-dev
       - libdbus-1-dev
       - libdevmapper-dev
@@ -54,10 +67,12 @@ addons:
       - libpciaccess-dev
       - librbd-dev
       - libreadline-dev
+      - libsanlock-dev
       - libsasl2-dev
       - libselinux1-dev
       - libssh2-1-dev
       - libssh-dev
+      - libtirpc-dev
       - libtool
       - libudev-dev
       - libxen-dev
@@ -71,7 +86,7 @@ addons:
       - parted
       - patch
       - perl
-      - pkg-config
+      - pkgconf
       - policykit-1
       - qemu-utils
       - radvd
@@ -89,21 +104,13 @@ env:
     # The custom $PATH is just to pick up some extra binaries installed
     # through homebrew on macOS and it's completely harmless on Linux
     - PATH="/usr/local/opt/gettext/bin:/usr/local/opt/rpcgen/bin:$PATH"
-    # The hyperv driver fails to build with clang on precise due to this
-    # error being raised in one of openwsman header files
-    - CFLAGS="-Wno-error=variadic-macros"
     - VIR_TEST_DEBUG=1
 
-before_install:
-  - if [ "$TRAVIS_OS_NAME" == "osx" ]; then brew update && brew upgrade && brew install rpcgen yajl; fi
-
 before_script:
-  - ./autogen.sh
+  - ./autogen.sh --prefix=$(pwd)/install-root
 
 script:
-  # Many unit tests still fail on macOS, and there are a bunch of issues with
-  # syntax-check as well, so skip those steps on that platform for now
-  - make -j3 && if [ "$TRAVIS_OS_NAME" != "osx" ]; then make -j3 syntax-check && make -j3 check; fi
+  - make -j3 && make -j3 syntax-check && make -j3 distcheck DISTCHECK_CONFIGURE_FLAGS=$DISTCHECK_CONFIGURE_FLAGS
 
 after_failure:
   - echo '============================================================================'

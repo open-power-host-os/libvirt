@@ -68,6 +68,13 @@ struct _virJSONParser {
 };
 
 
+virJSONType
+virJSONValueGetType(const virJSONValue *value)
+{
+    return value->type;
+}
+
+
 /**
  * virJSONValueObjectAddVArgs:
  * @obj: JSON object to add the values to
@@ -1205,6 +1212,33 @@ virJSONValueObjectGetString(virJSONValuePtr object,
         return NULL;
 
     return virJSONValueGetString(val);
+}
+
+
+/**
+ * virJSONValueObjectGetStringOrNumber:
+ * @object: JSON value object
+ * @key: name of the property in @object to get
+ *
+ * Gets a property named @key from the JSON object @object. The value may be
+ * a number or a string and is returned as a string. In cases when the property
+ * is not present or is not a string or number NULL is returned.
+ */
+const char *
+virJSONValueObjectGetStringOrNumber(virJSONValuePtr object,
+                                    const char *key)
+{
+    virJSONValuePtr val = virJSONValueObjectGet(object, key);
+
+    if (!val)
+        return NULL;
+
+    if (val->type == VIR_JSON_TYPE_STRING)
+        return val->data.string;
+    else if (val->type == VIR_JSON_TYPE_NUMBER)
+        return val->data.number;
+
+    return NULL;
 }
 
 

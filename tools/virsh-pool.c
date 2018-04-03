@@ -34,8 +34,8 @@
 #include "virstring.h"
 #include "virtime.h"
 
-#define VIRSH_COMMON_OPT_POOL_FULL \
-    VIRSH_COMMON_OPT_POOL(N_("pool name or uuid"))
+#define VIRSH_COMMON_OPT_POOL_FULL(cflags) \
+    VIRSH_COMMON_OPT_POOL(N_("pool name or uuid"), cflags)
 
 #define VIRSH_COMMON_OPT_POOL_BUILD \
     {.name = "build", \
@@ -127,7 +127,19 @@
     }, \
     {.name = "adapter-parent", \
      .type = VSH_OT_STRING, \
-     .help = N_("adapter parent to be used for underlying storage") \
+     .help = N_("adapter parent scsi_hostN to be used for underlying vHBA storage") \
+    }, \
+    {.name = "adapter-parent-wwnn", \
+     .type = VSH_OT_STRING, \
+     .help = N_("adapter parent scsi_hostN wwnn to be used for underlying vHBA storage") \
+    }, \
+    {.name = "adapter-parent-wwpn", \
+     .type = VSH_OT_STRING, \
+     .help = N_("adapter parent scsi_hostN wwpn to be used for underlying vHBA storage") \
+    }, \
+    {.name = "adapter-parent-fabric-wwn", \
+     .type = VSH_OT_STRING, \
+     .help = N_("adapter parent scsi_hostN fabric_wwn to be used for underlying vHBA storage") \
     }
 
 virStoragePoolPtr
@@ -141,6 +153,9 @@ virshCommandOptPoolBy(vshControl *ctl, const vshCmd *cmd, const char *optname,
     virCheckFlags(VIRSH_BYUUID | VIRSH_BYNAME, NULL);
 
     if (vshCommandOptStringReq(ctl, cmd, optname, &n) < 0)
+        return NULL;
+
+    if (cmd->skipChecks && !n)
         return NULL;
 
     vshDebug(ctl, VSH_ERR_INFO, "%s: found option <%s>: %s\n",
@@ -182,7 +197,7 @@ static const vshCmdInfo info_pool_autostart[] = {
 };
 
 static const vshCmdOptDef opts_pool_autostart[] = {
-    VIRSH_COMMON_OPT_POOL_FULL,
+    VIRSH_COMMON_OPT_POOL_FULL(VIR_CONNECT_LIST_STORAGE_POOLS_PERSISTENT),
 
     {.name = "disable",
      .type = VSH_OT_BOOL,
@@ -306,7 +321,9 @@ virshBuildPoolXML(vshControl *ctl,
                *srcDev = NULL, *srcName = NULL, *srcFormat = NULL,
                *target = NULL, *authType = NULL, *authUsername = NULL,
                *secretUsage = NULL, *adapterName = NULL, *adapterParent = NULL,
-               *adapterWwnn = NULL, *adapterWwpn = NULL, *secretUUID = NULL;
+               *adapterWwnn = NULL, *adapterWwpn = NULL, *secretUUID = NULL,
+               *adapterParentWwnn = NULL, *adapterParentWwpn = NULL,
+               *adapterParentFabricWwn = NULL;
     virBuffer buf = VIR_BUFFER_INITIALIZER;
 
     VSH_EXCLUSIVE_OPTIONS("secret-usage", "secret-uuid");
@@ -329,7 +346,10 @@ virshBuildPoolXML(vshControl *ctl,
         vshCommandOptStringReq(ctl, cmd, "adapter-name", &adapterName) < 0 ||
         vshCommandOptStringReq(ctl, cmd, "adapter-wwnn", &adapterWwnn) < 0 ||
         vshCommandOptStringReq(ctl, cmd, "adapter-wwpn", &adapterWwpn) < 0 ||
-        vshCommandOptStringReq(ctl, cmd, "adapter-parent", &adapterParent) < 0)
+        vshCommandOptStringReq(ctl, cmd, "adapter-parent", &adapterParent) < 0 ||
+        vshCommandOptStringReq(ctl, cmd, "adapter-parent-wwnn", &adapterParentWwnn) < 0 ||
+        vshCommandOptStringReq(ctl, cmd, "adapter-parent-wwpn", &adapterParentWwpn) < 0 ||
+        vshCommandOptStringReq(ctl, cmd, "adapter-parent-fabric-wwn", &adapterParentFabricWwn) < 0)
         goto cleanup;
 
     virBufferAsprintf(&buf, "<pool type='%s'>\n", type);
@@ -350,6 +370,12 @@ virshBuildPoolXML(vshControl *ctl,
             virBufferAddLit(&buf, "<adapter type='fc_host'");
             if (adapterParent)
                 virBufferAsprintf(&buf, " parent='%s'", adapterParent);
+            else if (adapterParentWwnn && adapterParentWwpn)
+                virBufferAsprintf(&buf, " parent_wwnn='%s' parent_wwnn='%s'",
+                                  adapterParentWwnn, adapterParentWwpn);
+            else if (adapterParentFabricWwn)
+                virBufferAsprintf(&buf, " parent_fabric_wwn='%s'",
+                                  adapterParentFabricWwn);
             virBufferAsprintf(&buf, " wwnn='%s' wwpn='%s'/>\n",
                               adapterWwnn, adapterWwpn);
         } else if (adapterName) {
@@ -575,7 +601,7 @@ static const vshCmdInfo info_pool_build[] = {
 };
 
 static const vshCmdOptDef opts_pool_build[] = {
-    VIRSH_COMMON_OPT_POOL_FULL,
+    VIRSH_COMMON_OPT_POOL_FULL(0),
     VIRSH_COMMON_OPT_POOL_NO_OVERWRITE,
     VIRSH_COMMON_OPT_POOL_OVERWRITE,
 
@@ -625,7 +651,7 @@ static const vshCmdInfo info_pool_destroy[] = {
 };
 
 static const vshCmdOptDef opts_pool_destroy[] = {
-    VIRSH_COMMON_OPT_POOL_FULL,
+    VIRSH_COMMON_OPT_POOL_FULL(VIR_CONNECT_LIST_STORAGE_POOLS_ACTIVE),
 
     {.name = NULL}
 };
@@ -665,7 +691,7 @@ static const vshCmdInfo info_pool_delete[] = {
 };
 
 static const vshCmdOptDef opts_pool_delete[] = {
-    VIRSH_COMMON_OPT_POOL_FULL,
+    VIRSH_COMMON_OPT_POOL_FULL(VIR_CONNECT_LIST_STORAGE_POOLS_INACTIVE),
 
     {.name = NULL}
 };
@@ -705,7 +731,7 @@ static const vshCmdInfo info_pool_refresh[] = {
 };
 
 static const vshCmdOptDef opts_pool_refresh[] = {
-    VIRSH_COMMON_OPT_POOL_FULL,
+    VIRSH_COMMON_OPT_POOL_FULL(0),
 
     {.name = NULL}
 };
@@ -745,7 +771,7 @@ static const vshCmdInfo info_pool_dumpxml[] = {
 };
 
 static const vshCmdOptDef opts_pool_dumpxml[] = {
-    VIRSH_COMMON_OPT_POOL_FULL,
+    VIRSH_COMMON_OPT_POOL_FULL(0),
 
     {.name = "inactive",
      .type = VSH_OT_BOOL,
@@ -1636,7 +1662,7 @@ static const vshCmdInfo info_pool_info[] = {
 };
 
 static const vshCmdOptDef opts_pool_info[] = {
-    VIRSH_COMMON_OPT_POOL_FULL,
+    VIRSH_COMMON_OPT_POOL_FULL(0),
 
     {.name = "bytes",
      .type = VSH_OT_BOOL,
@@ -1726,7 +1752,7 @@ static const vshCmdInfo info_pool_name[] = {
 };
 
 static const vshCmdOptDef opts_pool_name[] = {
-    VIRSH_COMMON_OPT_POOL_FULL,
+    VIRSH_COMMON_OPT_POOL_FULL(0),
 
     {.name = NULL}
 };
@@ -1758,7 +1784,7 @@ static const vshCmdInfo info_pool_start[] = {
 };
 
 static const vshCmdOptDef opts_pool_start[] = {
-    VIRSH_COMMON_OPT_POOL_FULL,
+    VIRSH_COMMON_OPT_POOL_FULL(VIR_CONNECT_LIST_STORAGE_POOLS_INACTIVE),
     VIRSH_COMMON_OPT_POOL_BUILD,
     VIRSH_COMMON_OPT_POOL_NO_OVERWRITE,
     VIRSH_COMMON_OPT_POOL_OVERWRITE,
@@ -1819,7 +1845,7 @@ static const vshCmdInfo info_pool_undefine[] = {
 };
 
 static const vshCmdOptDef opts_pool_undefine[] = {
-    VIRSH_COMMON_OPT_POOL_FULL,
+    VIRSH_COMMON_OPT_POOL_FULL(VIR_CONNECT_LIST_STORAGE_POOLS_PERSISTENT),
 
     {.name = NULL}
 };
@@ -1859,7 +1885,7 @@ static const vshCmdInfo info_pool_uuid[] = {
 };
 
 static const vshCmdOptDef opts_pool_uuid[] = {
-    VIRSH_COMMON_OPT_POOL_FULL,
+    VIRSH_COMMON_OPT_POOL_FULL(0),
 
     {.name = NULL}
 };
@@ -1896,7 +1922,7 @@ static const vshCmdInfo info_pool_edit[] = {
 };
 
 static const vshCmdOptDef opts_pool_edit[] = {
-    VIRSH_COMMON_OPT_POOL_FULL,
+    VIRSH_COMMON_OPT_POOL_FULL(0),
 
     {.name = NULL}
 };

@@ -67,7 +67,6 @@
 #include "domain_audit.h"
 #include "domain_nwfilter.h"
 #include "nwfilter_conf.h"
-#include "network/bridge_driver.h"
 #include "virinitctl.h"
 #include "virnetdev.h"
 #include "virnetdevtap.h"
@@ -1794,11 +1793,25 @@ lxcConnectSupportsFeature(virConnectPtr conn, int feature)
     if (virConnectSupportsFeatureEnsureACL(conn) < 0)
         return -1;
 
-    switch (feature) {
-        case VIR_DRV_FEATURE_TYPED_PARAM_STRING:
-            return 1;
-        default:
-            return 0;
+    switch ((virDrvFeature) feature) {
+    case VIR_DRV_FEATURE_TYPED_PARAM_STRING:
+        return 1;
+    case VIR_DRV_FEATURE_FD_PASSING:
+    case VIR_DRV_FEATURE_MIGRATE_CHANGE_PROTECTION:
+    case VIR_DRV_FEATURE_MIGRATION_DIRECT:
+    case VIR_DRV_FEATURE_MIGRATION_OFFLINE:
+    case VIR_DRV_FEATURE_MIGRATION_P2P:
+    case VIR_DRV_FEATURE_MIGRATION_PARAMS:
+    case VIR_DRV_FEATURE_MIGRATION_V1:
+    case VIR_DRV_FEATURE_MIGRATION_V2:
+    case VIR_DRV_FEATURE_MIGRATION_V3:
+    case VIR_DRV_FEATURE_PROGRAM_KEEPALIVE:
+    case VIR_DRV_FEATURE_REMOTE:
+    case VIR_DRV_FEATURE_REMOTE_CLOSE_CALLBACK:
+    case VIR_DRV_FEATURE_REMOTE_EVENT_CALLBACK:
+    case VIR_DRV_FEATURE_XML_MIGRATABLE:
+    default:
+        return 0;
     }
 }
 
@@ -3579,6 +3592,7 @@ lxcDomainUpdateDeviceConfig(virDomainDefPtr vmdef,
 {
     int ret = -1;
     virDomainNetDefPtr net;
+    virDomainDeviceDef oldDev = { .type = dev->type };
     int idx;
 
     switch (dev->type) {
@@ -3587,8 +3601,11 @@ lxcDomainUpdateDeviceConfig(virDomainDefPtr vmdef,
         if ((idx = virDomainNetFindIdx(vmdef, net)) < 0)
             goto cleanup;
 
-        virDomainNetDefFree(vmdef->nets[idx]);
+        oldDev.data.net = vmdef->nets[idx];
+        if (virDomainDefCompatibleDevice(vmdef, dev, &oldDev) < 0)
+            return -1;
 
+        virDomainNetDefFree(vmdef->nets[idx]);
         vmdef->nets[idx] = net;
         dev->data.net = NULL;
         ret = 0;
@@ -3898,8 +3915,8 @@ lxcDomainAttachDeviceDiskLive(virLXCDriverPtr driver,
                                 major(sb.st_rdev),
                                 minor(sb.st_rdev),
                                 perms) < 0)
-            VIR_WARN("cannot deny device %s for domain %s",
-                     src, vm->def->name);
+            VIR_WARN("cannot deny device %s for domain %s: %s",
+                     src, vm->def->name, virGetLastErrorMessage());
         goto cleanup;
     }
 
@@ -3944,7 +3961,7 @@ lxcDomainAttachDeviceNetLive(virConnectPtr conn,
      * network's pool of devices, or resolve bridge device name
      * to the one defined in the network definition.
      */
-    if (networkAllocateActualDevice(vm->def, net) < 0)
+    if (virDomainNetAllocateActualDevice(vm->def, net) < 0)
         return -1;
 
     actualType = virDomainNetGetActualType(net);
@@ -3969,9 +3986,20 @@ lxcDomainAttachDeviceNetLive(virConnectPtr conn,
         if (!(veth = virLXCProcessSetupInterfaceDirect(conn, vm->def, net)))
             goto cleanup;
     }   break;
-    default:
+    case VIR_DOMAIN_NET_TYPE_USER:
+    case VIR_DOMAIN_NET_TYPE_VHOSTUSER:
+    case VIR_DOMAIN_NET_TYPE_SERVER:
+    case VIR_DOMAIN_NET_TYPE_CLIENT:
+    case VIR_DOMAIN_NET_TYPE_MCAST:
+    case VIR_DOMAIN_NET_TYPE_INTERNAL:
+    case VIR_DOMAIN_NET_TYPE_HOSTDEV:
+    case VIR_DOMAIN_NET_TYPE_UDP:
         virReportError(VIR_ERR_CONFIG_UNSUPPORTED, "%s",
                        _("Network device type is not supported"));
+        goto cleanup;
+    case VIR_DOMAIN_NET_TYPE_LAST:
+    default:
+        virReportEnumRangeError(virDomainNetType, actualType);
         goto cleanup;
     }
     /* Set bandwidth or warn if requested and not supported. */
@@ -3983,8 +4011,8 @@ lxcDomainAttachDeviceNetLive(virConnectPtr conn,
                 goto cleanup;
         } else {
             VIR_WARN("setting bandwidth on interfaces of "
-                     "type '%s' is not implemented yet",
-                     virDomainNetTypeToString(actualType));
+                     "type '%s' is not implemented yet: %s",
+                     virDomainNetTypeToString(actualType), virGetLastErrorMessage());
         }
     }
 
@@ -4012,6 +4040,15 @@ lxcDomainAttachDeviceNetLive(virConnectPtr conn,
             ignore_value(virNetDevMacVLanDelete(veth));
             break;
 
+        case VIR_DOMAIN_NET_TYPE_USER:
+        case VIR_DOMAIN_NET_TYPE_VHOSTUSER:
+        case VIR_DOMAIN_NET_TYPE_SERVER:
+        case VIR_DOMAIN_NET_TYPE_CLIENT:
+        case VIR_DOMAIN_NET_TYPE_MCAST:
+        case VIR_DOMAIN_NET_TYPE_INTERNAL:
+        case VIR_DOMAIN_NET_TYPE_HOSTDEV:
+        case VIR_DOMAIN_NET_TYPE_UDP:
+        case VIR_DOMAIN_NET_TYPE_LAST:
         default:
             /* no-op */
             break;
@@ -4079,8 +4116,8 @@ lxcDomainAttachDeviceHostdevSubsysUSBLive(virLXCDriverPtr driver,
         if (virUSBDeviceFileIterate(usb,
                                     virLXCTeardownHostUSBDeviceCgroup,
                                     priv->cgroup) < 0)
-            VIR_WARN("cannot deny device %s for domain %s",
-                     src, vm->def->name);
+            VIR_WARN("cannot deny device %s for domain %s: %s",
+                     src, vm->def->name, virGetLastErrorMessage());
         goto cleanup;
     }
 
@@ -4153,8 +4190,8 @@ lxcDomainAttachDeviceHostdevStorageLive(virLXCDriverPtr driver,
                                 major(sb.st_rdev),
                                 minor(sb.st_rdev),
                                 VIR_CGROUP_DEVICE_RWM) < 0)
-            VIR_WARN("cannot deny device %s for domain %s",
-                     def->source.caps.u.storage.block, vm->def->name);
+            VIR_WARN("cannot deny device %s for domain %s: %s",
+                     def->source.caps.u.storage.block, vm->def->name, virGetLastErrorMessage());
         goto cleanup;
     }
 
@@ -4225,8 +4262,8 @@ lxcDomainAttachDeviceHostdevMiscLive(virLXCDriverPtr driver,
                                 major(sb.st_rdev),
                                 minor(sb.st_rdev),
                                 VIR_CGROUP_DEVICE_RWM) < 0)
-            VIR_WARN("cannot deny device %s for domain %s",
-                     def->source.caps.u.storage.block, vm->def->name);
+            VIR_WARN("cannot deny device %s for domain %s: %s",
+                     def->source.caps.u.storage.block, vm->def->name, virGetLastErrorMessage());
         goto cleanup;
     }
 
@@ -4397,8 +4434,8 @@ lxcDomainDetachDeviceDiskLive(virDomainObjPtr vm,
 
     if (virCgroupDenyDevicePath(priv->cgroup, src,
                                 VIR_CGROUP_DEVICE_RWM, false) != 0)
-        VIR_WARN("cannot deny device %s for domain %s",
-                 src, vm->def->name);
+        VIR_WARN("cannot deny device %s for domain %s: %s",
+                 src, vm->def->name, virGetLastErrorMessage());
 
     virDomainDiskRemove(vm->def, idx);
     virDomainDiskDefFree(def);
@@ -4447,12 +4484,22 @@ lxcDomainDetachDeviceNetLive(virDomainObjPtr vm,
          * the host side. Further the container can change
          * the mac address of NIC name, so we can't easily
          * find out which guest NIC it maps to
+         */
     case VIR_DOMAIN_NET_TYPE_DIRECT:
-        */
-
-    default:
+    case VIR_DOMAIN_NET_TYPE_USER:
+    case VIR_DOMAIN_NET_TYPE_VHOSTUSER:
+    case VIR_DOMAIN_NET_TYPE_SERVER:
+    case VIR_DOMAIN_NET_TYPE_CLIENT:
+    case VIR_DOMAIN_NET_TYPE_MCAST:
+    case VIR_DOMAIN_NET_TYPE_INTERNAL:
+    case VIR_DOMAIN_NET_TYPE_HOSTDEV:
+    case VIR_DOMAIN_NET_TYPE_UDP:
         virReportError(VIR_ERR_CONFIG_UNSUPPORTED, "%s",
                        _("Only bridged veth devices can be detached"));
+        goto cleanup;
+    case VIR_DOMAIN_NET_TYPE_LAST:
+    default:
+        virReportEnumRangeError(virDomainNetType, actualType);
         goto cleanup;
     }
 
@@ -4468,7 +4515,7 @@ lxcDomainDetachDeviceNetLive(virDomainObjPtr vm,
     ret = 0;
  cleanup:
     if (!ret) {
-        networkReleaseActualDevice(vm->def, detach);
+        virDomainNetReleaseActualDevice(vm->def, detach);
         virDomainNetRemove(vm->def, detachidx);
         virDomainNetDefFree(detach);
     }
@@ -4520,8 +4567,8 @@ lxcDomainDetachDeviceHostdevUSBLive(virLXCDriverPtr driver,
     if (virUSBDeviceFileIterate(usb,
                                 virLXCTeardownHostUSBDeviceCgroup,
                                 priv->cgroup) < 0)
-        VIR_WARN("cannot deny device %s for domain %s",
-                 dst, vm->def->name);
+        VIR_WARN("cannot deny device %s for domain %s: %s",
+                 dst, vm->def->name, virGetLastErrorMessage());
 
     virObjectLock(hostdev_mgr->activeUSBHostdevs);
     virUSBDeviceListDel(hostdev_mgr->activeUSBHostdevs, usb);
@@ -4576,8 +4623,8 @@ lxcDomainDetachDeviceHostdevStorageLive(virDomainObjPtr vm,
 
     if (virCgroupDenyDevicePath(priv->cgroup, def->source.caps.u.storage.block,
                                 VIR_CGROUP_DEVICE_RWM, false) != 0)
-        VIR_WARN("cannot deny device %s for domain %s",
-                 def->source.caps.u.storage.block, vm->def->name);
+        VIR_WARN("cannot deny device %s for domain %s: %s",
+                 def->source.caps.u.storage.block, vm->def->name, virGetLastErrorMessage());
 
     virDomainHostdevRemove(vm->def, idx);
     virDomainHostdevDefFree(def);
@@ -4626,8 +4673,8 @@ lxcDomainDetachDeviceHostdevMiscLive(virDomainObjPtr vm,
 
     if (virCgroupDenyDevicePath(priv->cgroup, def->source.caps.u.misc.chardev,
                                 VIR_CGROUP_DEVICE_RWM, false) != 0)
-        VIR_WARN("cannot deny device %s for domain %s",
-                 def->source.caps.u.misc.chardev, vm->def->name);
+        VIR_WARN("cannot deny device %s for domain %s: %s",
+                 def->source.caps.u.misc.chardev, vm->def->name, virGetLastErrorMessage());
 
     virDomainHostdevRemove(vm->def, idx);
     virDomainHostdevDefFree(def);
@@ -4791,7 +4838,7 @@ static int lxcDomainAttachDeviceFlags(virDomainPtr dom,
         if (!vmdef)
             goto endjob;
 
-        if (virDomainDefCompatibleDevice(vmdef, dev) < 0)
+        if (virDomainDefCompatibleDevice(vmdef, dev, NULL) < 0)
             goto endjob;
 
         if ((ret = lxcDomainAttachDeviceConfig(vmdef, dev)) < 0)
@@ -4799,7 +4846,7 @@ static int lxcDomainAttachDeviceFlags(virDomainPtr dom,
     }
 
     if (flags & VIR_DOMAIN_AFFECT_LIVE) {
-        if (virDomainDefCompatibleDevice(vm->def, dev_copy) < 0)
+        if (virDomainDefCompatibleDevice(vm->def, dev_copy, NULL) < 0)
             goto endjob;
 
         if ((ret = lxcDomainAttachDeviceLive(dom->conn, driver, vm, dev_copy)) < 0)
@@ -4902,17 +4949,13 @@ static int lxcDomainUpdateDeviceFlags(virDomainPtr dom,
         if (!vmdef)
             goto endjob;
 
-        if (virDomainDefCompatibleDevice(vmdef, dev) < 0)
-            goto endjob;
-
+        /* virDomainDefCompatibleDevice call is delayed until we know the
+         * device we're going to update. */
         if ((ret = lxcDomainUpdateDeviceConfig(vmdef, dev)) < 0)
             goto endjob;
     }
 
     if (flags & VIR_DOMAIN_AFFECT_LIVE) {
-        if (virDomainDefCompatibleDevice(vm->def, dev_copy) < 0)
-            goto endjob;
-
         virReportError(VIR_ERR_OPERATION_UNSUPPORTED, "%s",
                        _("Unable to modify live devices"));
 

@@ -55,6 +55,15 @@ VIR_LOG_INIT("qemu.qemu_monitor");
 #define DEBUG_IO 0
 #define DEBUG_RAW_IO 0
 
+/* We read from QEMU until seeing a \r\n pair to indicate a
+ * completed reply or event. To avoid memory denial-of-service
+ * though, we must have a size limit on amount of data we
+ * buffer. 10 MB is large enough that it ought to cope with
+ * normal QEMU replies, and small enough that we're not
+ * consuming unreasonable mem.
+ */
+#define QEMU_MONITOR_MAX_RESPONSE (10 * 1024 * 1024)
+
 struct _qemuMonitor {
     virObjectLockable parent;
 
@@ -69,7 +78,6 @@ struct _qemuMonitor {
      * < 0: an error occurred during the registration of @fd */
     int watch;
     int hasSendFD;
-    int willhangup;
 
     virDomainObjPtr vm;
 
@@ -201,6 +209,10 @@ VIR_ENUM_DECL(qemuMonitorBlockIOStatus)
 VIR_ENUM_IMPL(qemuMonitorBlockIOStatus,
               QEMU_MONITOR_BLOCK_IO_STATUS_LAST,
               "ok", "failed", "nospace")
+
+VIR_ENUM_IMPL(qemuMonitorDumpStatus,
+              QEMU_MONITOR_DUMP_STATUS_LAST,
+              "none", "active", "completed", "failed")
 
 char *
 qemuMonitorEscapeArg(const char *in)
@@ -575,6 +587,12 @@ qemuMonitorIORead(qemuMonitorPtr mon)
     int ret = 0;
 
     if (avail < 1024) {
+        if (mon->bufferLength >= QEMU_MONITOR_MAX_RESPONSE) {
+            virReportSystemError(ERANGE,
+                                 _("No complete monitor response found in %d bytes"),
+                                 QEMU_MONITOR_MAX_RESPONSE);
+            return -1;
+        }
         if (VIR_REALLOC_N(mon->buffer,
                           mon->bufferLength + 1024) < 0)
             return -1;
@@ -701,10 +719,8 @@ qemuMonitorIO(int watch, int fd, int events, void *opaque)
         if (events & VIR_EVENT_HANDLE_HANGUP) {
             hangup = true;
             if (!error) {
-                if (!mon->willhangup) {
-                    virReportError(VIR_ERR_INTERNAL_ERROR, "%s",
-                                   _("End of file from qemu monitor"));
-                }
+                virReportError(VIR_ERR_INTERNAL_ERROR, "%s",
+                               _("End of file from qemu monitor"));
                 eof = true;
                 events &= ~VIR_EVENT_HANDLE_HANGUP;
             }
@@ -743,7 +759,7 @@ qemuMonitorIO(int watch, int fd, int events, void *opaque)
         if (mon->lastError.code != VIR_ERR_OK) {
             /* Already have an error, so clear any new error */
             virResetLastError();
-        } else if (!mon->willhangup) {
+        } else {
             virErrorPtr err = virGetLastError();
             if (!err)
                 virReportError(VIR_ERR_INTERNAL_ERROR, "%s",
@@ -1303,7 +1319,6 @@ qemuMonitorHMPCommandWithFd(qemuMonitorPtr mon,
 
 int
 qemuMonitorGetDiskSecret(qemuMonitorPtr mon,
-                         virConnectPtr conn,
                          const char *path,
                          char **secret,
                          size_t *secretLen)
@@ -1312,7 +1327,7 @@ qemuMonitorGetDiskSecret(qemuMonitorPtr mon,
     *secret = NULL;
     *secretLen = 0;
 
-    QEMU_MONITOR_CALLBACK(mon, ret, diskSecretLookup, conn, mon->vm,
+    QEMU_MONITOR_CALLBACK(mon, ret, diskSecretLookup, mon->vm,
                           path, secret, secretLen);
     return ret;
 }
@@ -1337,7 +1352,6 @@ qemuMonitorEmitShutdown(qemuMonitorPtr mon, virTristateBool guest)
 {
     int ret = -1;
     VIR_DEBUG("mon=%p guest=%u", mon, guest);
-    mon->willhangup = 1;
 
     QEMU_MONITOR_CALLBACK(mon, ret, domainShutdown, mon->vm, guest);
     return ret;
@@ -1656,6 +1670,23 @@ qemuMonitorEmitBlockThreshold(qemuMonitorPtr mon,
 
 
 int
+qemuMonitorEmitDumpCompleted(qemuMonitorPtr mon,
+                             int status,
+                             qemuMonitorDumpStatsPtr stats,
+                             const char *error)
+{
+    int ret = -1;
+
+    VIR_DEBUG("mon=%p", mon);
+
+    QEMU_MONITOR_CALLBACK(mon, ret, domainDumpCompleted, mon->vm,
+                          status, stats, error);
+
+    return ret;
+}
+
+
+int
 qemuMonitorSetCapabilities(qemuMonitorPtr mon)
 {
     QEMU_CHECK_MONITOR(mon);
@@ -1668,15 +1699,14 @@ qemuMonitorSetCapabilities(qemuMonitorPtr mon)
 
 
 int
-qemuMonitorStartCPUs(qemuMonitorPtr mon,
-                     virConnectPtr conn)
+qemuMonitorStartCPUs(qemuMonitorPtr mon)
 {
     QEMU_CHECK_MONITOR(mon);
 
     if (mon->json)
-        return qemuMonitorJSONStartCPUs(mon, conn);
+        return qemuMonitorJSONStartCPUs(mon);
     else
-        return qemuMonitorTextStartCPUs(mon, conn);
+        return qemuMonitorTextStartCPUs(mon);
 }
 
 
@@ -2743,6 +2773,16 @@ qemuMonitorMigrateCancel(qemuMonitorPtr mon)
 }
 
 
+int
+qemuMonitorQueryDump(qemuMonitorPtr mon,
+                     qemuMonitorDumpStatsPtr stats)
+{
+    QEMU_CHECK_MONITOR_JSON(mon);
+
+    return qemuMonitorJSONQueryDump(mon, stats);
+}
+
+
 /**
  * Returns 1 if @capability is supported, 0 if it's not, or -1 on error.
  */
@@ -2763,7 +2803,10 @@ qemuMonitorGetDumpGuestMemoryCapability(qemuMonitorPtr mon,
 
 
 int
-qemuMonitorDumpToFd(qemuMonitorPtr mon, int fd, const char *dumpformat)
+qemuMonitorDumpToFd(qemuMonitorPtr mon,
+                    int fd,
+                    const char *dumpformat,
+                    bool detach)
 {
     int ret;
     VIR_DEBUG("fd=%d dumpformat=%s", fd, dumpformat);
@@ -2773,7 +2816,7 @@ qemuMonitorDumpToFd(qemuMonitorPtr mon, int fd, const char *dumpformat)
     if (qemuMonitorSendFileHandle(mon, "dump", fd) < 0)
         return -1;
 
-    ret = qemuMonitorJSONDump(mon, "fd:dump", dumpformat);
+    ret = qemuMonitorJSONDump(mon, "fd:dump", dumpformat, detach);
 
     if (ret < 0) {
         if (qemuMonitorCloseFileHandle(mon, "dump") < 0)
@@ -4273,7 +4316,7 @@ qemuMonitorGetRTCTime(qemuMonitorPtr mon,
 }
 
 
-virHashTablePtr
+virJSONValuePtr
 qemuMonitorQueryQMPSchema(qemuMonitorPtr mon)
 {
     QEMU_CHECK_MONITOR_JSON_NULL(mon);
@@ -4318,7 +4361,14 @@ qemuMonitorGuestPanicEventInfoFormatMsg(qemuMonitorEventPanicInfoPtr info)
                                  info->data.hyperv.arg3, info->data.hyperv.arg4,
                                  info->data.hyperv.arg5));
         break;
-
+    case QEMU_MONITOR_EVENT_PANIC_INFO_TYPE_S390:
+        ignore_value(virAsprintf(&ret, "s390: core='%d' psw-mask='0x%016llx' "
+                                 "psw-addr='0x%016llx' reason='%s'",
+                                 info->data.s390.core,
+                                 info->data.s390.psw_mask,
+                                 info->data.s390.psw_addr,
+                                 info->data.s390.reason));
+        break;
     case QEMU_MONITOR_EVENT_PANIC_INFO_TYPE_NONE:
     case QEMU_MONITOR_EVENT_PANIC_INFO_TYPE_LAST:
         break;
@@ -4333,6 +4383,16 @@ qemuMonitorEventPanicInfoFree(qemuMonitorEventPanicInfoPtr info)
 {
     if (!info)
         return;
+
+    switch (info->type) {
+    case QEMU_MONITOR_EVENT_PANIC_INFO_TYPE_S390:
+        VIR_FREE(info->data.s390.reason);
+        break;
+    case QEMU_MONITOR_EVENT_PANIC_INFO_TYPE_NONE:
+    case QEMU_MONITOR_EVENT_PANIC_INFO_TYPE_HYPERV:
+    case QEMU_MONITOR_EVENT_PANIC_INFO_TYPE_LAST:
+        break;
+    }
 
     VIR_FREE(info);
 }

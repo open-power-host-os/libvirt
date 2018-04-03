@@ -19,7 +19,7 @@
 LCOV = lcov
 GENHTML = genhtml
 
-SUBDIRS = . gnulib/lib include/libvirt src daemon tools docs gnulib/tests \
+SUBDIRS = . gnulib/lib include/libvirt src tools docs gnulib/tests \
   tests po examples
 
 XZ_OPT ?= -v -T0
@@ -57,7 +57,7 @@ NEWS: \
 	    $(srcdir)/docs/news.xml \
 	  >$@-tmp \
 	    || { rm -f $@-tmp; exit 1; }; \
-	  $(srcdir)/docs/reformat-news.py $@-tmp >$@ \
+	  $(PYTHON) $(srcdir)/docs/reformat-news.py $@-tmp >$@ \
 	    || { rm -f $@-tmp; exit 1; }; \
 	  rm -f $@-tmp; \
 	fi
@@ -68,6 +68,9 @@ EXTRA_DIST += \
 
 rpm: clean
 	@(unset CDPATH ; $(MAKE) dist && rpmbuild -ta $(distdir).tar.xz)
+
+srpm: clean
+	@(unset CDPATH ; $(MAKE) dist && rpmbuild -ts $(distdir).tar.xz)
 
 check-local: all tests
 

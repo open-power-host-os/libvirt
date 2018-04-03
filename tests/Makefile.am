@@ -128,6 +128,8 @@ EXTRA_DIST = \
 	qemumonitorjsondata \
 	qemuxml2argvdata \
 	qemuxml2xmloutdata \
+	qemustatusxml2xmldata \
+	qemuqapischema.json \
 	qemumemlockdata \
 	secretxml2xmlin \
 	securityselinuxhelperdata \
@@ -165,6 +167,7 @@ EXTRA_DIST = \
 	xml2vmxdata \
 	virstorageutildata \
 	virfilecachedata \
+	virresctrldata \
 	$(NULL)
 
 test_helpers = commandhelper ssh
@@ -232,6 +235,7 @@ if WITH_LINUX
 test_programs += fchosttest
 test_programs += scsihosttest
 test_programs += vircaps2xmltest
+test_programs += virresctrltest
 test_libraries += virusbmock.la \
 	virnetdevbandwidthmock.la \
 	virnumamock.la \
@@ -248,9 +252,9 @@ test_programs += virdbustest \
                  virsystemdtest \
                  $(NULL)
 test_libraries += virdbusmock.la
-if WITH_POLKIT1
+if WITH_POLKIT
 test_programs += virpolkittest
-endif WITH_POLKIT1
+endif WITH_POLKIT
 endif WITH_DBUS
 
 if WITH_SECDRIVER_SELINUX
@@ -551,6 +555,7 @@ endif ! WITH_LIBXL
 QEMUMONITORTESTUTILS_SOURCES = \
 	qemumonitortestutils.c \
 	qemumonitortestutils.h \
+	testutilsqemuschema.h testutilsqemuschema.c \
 	$(NULL)
 
 if WITH_QEMU
@@ -580,7 +585,8 @@ qemucpumock_la_LIBADD = $(MOCKLIBS_LIBS)
 qemuxml2argvtest_SOURCES = \
 	qemuxml2argvtest.c testutilsqemu.c testutilsqemu.h \
 	testutils.c testutils.h
-qemuxml2argvtest_LDADD = libqemutestdriver.la $(LDADDS) $(LIBXML_LIBS)
+qemuxml2argvtest_LDADD = libqemutestdriver.la \
+	$(LDADDS) $(LIBXML_LIBS)
 
 qemuxml2argvmock_la_SOURCES = \
 	qemuxml2argvmock.c
@@ -689,6 +695,7 @@ else ! WITH_QEMU
 EXTRA_DIST += qemuxml2argvtest.c qemuxml2xmltest.c qemuargv2xmltest.c \
 	qemuhelptest.c domainsnapshotxml2xmltest.c \
 	qemumonitortest.c testutilsqemu.c testutilsqemu.h \
+	testutilsqemuschema.c testutilsqemuschema.h \
 	qemumonitorjsontest.c qemuhotplugtest.c \
 	qemuagenttest.c qemucapabilitiestest.c \
 	qemucaps2xmltest.c qemucommandutiltest.c \
@@ -839,8 +846,8 @@ storagebackendsheepdogtest_SOURCES = \
 	storagebackendsheepdogtest.c \
 	testutils.c testutils.h
 storagebackendsheepdogtest_LDADD = \
-	../src/libvirt_driver_storage_impl.la \
 	../src/libvirt_storage_backend_sheepdog_priv.la \
+	../src/libvirt_driver_storage_impl.la \
 	$(LDADDS)
 else ! WITH_STORAGE_SHEEPDOG
 EXTRA_DIST += storagebackendsheepdogtest.c
@@ -1165,8 +1172,13 @@ virnumamock_la_SOURCES = \
 virnumamock_la_LDFLAGS = $(MOCKLIBS_LDFLAGS)
 virnumamock_la_LIBADD = $(MOCKLIBS_LIBS)
 
+virresctrltest_SOURCES = \
+	virresctrltest.c testutils.h testutils.c virfilewrapper.h virfilewrapper.c
+virresctrltest_LDADD = $(LDADDS)
+
 else ! WITH_LINUX
-EXTRA_DIST += vircaps2xmltest.c virnumamock.c virfilewrapper.c virfilewrapper.h
+EXTRA_DIST += vircaps2xmltest.c virnumamock.c virfilewrapper.c \
+			  virfilewrapper.h virresctrltest.c
 endif ! WITH_LINUX
 
 if WITH_NSS

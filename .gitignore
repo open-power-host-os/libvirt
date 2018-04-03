@@ -59,12 +59,6 @@
 /configure
 /configure.lineno
 /conftest.*
-/daemon/*_dispatch.h
-/daemon/libvirt_qemud
-/daemon/libvirtd
-/daemon/libvirtd*.logrotate
-/daemon/libvirtd.policy
-/daemon/test_libvirtd.aug
 /docs/aclperms.htmlinc
 /docs/apibuild.py.stamp
 /docs/devhelp/libvirt.devhelp
@@ -123,6 +117,7 @@
 /src/access/viraccessapicheckqemu.h
 /src/admin/admin_client.h
 /src/admin/admin_protocol.[ch]
+/src/admin/admin_server_dispatch_stubs.h
 /src/esx/*.generated.*
 /src/hyperv/*.generated.*
 /src/libvirt*.def
@@ -138,6 +133,8 @@
 /src/libvirt_*helper
 /src/libvirt_*probes.h
 /src/libvirt_lxc
+/src/libvirtd
+/src/libvirtd*.logrotate
 /src/locking/libxl-lockd.conf
 /src/locking/libxl-sanlock.conf
 /src/locking/lock_daemon_dispatch_stubs.h
@@ -156,6 +153,7 @@
 /src/qemu/test_libvirtd_qemu.aug
 /src/remote/*_client_bodies.h
 /src/remote/*_protocol.[ch]
+/src/remote/*_stubs.h
 /src/rpc/virkeepaliveprotocol.[ch]
 /src/rpc/virnetprotocol.[ch]
 /src/test_libvirt*.aug
@@ -166,6 +164,7 @@
 /src/virt-aa-helper
 /src/virtlockd
 /src/virtlogd
+/src/virt-guest-shutdown.target
 /tests/*.log
 /tests/*.pid
 /tests/*.trs
